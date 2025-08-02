@@ -7,7 +7,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o minicdn .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mediacdn .
 
 FROM alpine:latest
 
@@ -15,8 +15,8 @@ RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 
-COPY --from=builder /app/minicdn .
+COPY --from=builder /app/mediacdn .
 
 EXPOSE 8080
 
-CMD ["./minicdn"]
+CMD ["./mediacdn"]

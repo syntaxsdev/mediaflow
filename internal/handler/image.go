@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"minicdn/internal/service"
+	"mediacdn/internal/service"
 )
 
 type ImageHandler struct {

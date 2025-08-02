@@ -1,4 +1,4 @@
-module minicdn
+module mediacdn
 
 go 1.24.5
 

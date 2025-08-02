@@ -12,8 +12,8 @@ import (
 
 	"github.com/disintegration/imaging"
 
-	"minicdn/internal/config"
-	"minicdn/internal/s3"
+	"mediacdn/internal/config"
+	"mediacdn/internal/s3"
 )
 
 type ImageService struct {

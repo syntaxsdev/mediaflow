@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"minicdn/internal/config"
-	"minicdn/internal/handler"
-	"minicdn/internal/service"
+	"mediacdn/internal/config"
+	"mediacdn/internal/handler"
+	"mediacdn/internal/service"
 )
 
 func main() {

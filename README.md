@@ -1,4 +1,4 @@
-# MiniCDN - Go Image Processing API
+# MediaCDN - Go Image Processing API
 
 A lightweight, production-ready Go service for processing and serving images from S3 with CDN-friendly caching headers.
 
@@ -42,22 +42,22 @@ export AWS_ACCESS_KEY_ID=your-key
 export AWS_SECRET_ACCESS_KEY=your-secret
 
 # Build and run
-go build -o minicdn .
-./minicdn
+go build -o mediacdn .
+./mediacdn
 ```
 
 ## Docker Deployment
 
 ```bash
 # Build image
-docker build -t minicdn .
+docker build -t mediacdn .
 
 # Run container
 docker run -p 8080:8080 \
   -e S3_BUCKET=your-bucket-name \
   -e AWS_ACCESS_KEY_ID=your-key \
   -e AWS_SECRET_ACCESS_KEY=your-secret \
-  minicdn
+  mediacdn
 ```
 
 ## Health Check
