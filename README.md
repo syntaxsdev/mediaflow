@@ -67,4 +67,3 @@ GET /health
 ```
 
 Returns `200 OK` when service is healthy.
- 
