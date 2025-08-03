@@ -3,6 +3,8 @@ package utils
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -20,4 +22,13 @@ func GracefulExit(reason string) {
 	if err == nil {
 		process.Signal(syscall.SIGTERM)
 	}
+}
+
+// BaseName returns the base name of a path without the extension
+func BaseName(path string) string {
+	ext := filepath.Ext(path)
+	if ext == "" {
+		return path
+	}
+	return strings.TrimSuffix(path, ext)
 }

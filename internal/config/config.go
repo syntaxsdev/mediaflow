@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
-	
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,7 +17,6 @@ type Config struct {
 }
 
 func Load() *Config {
-	fmt.Println("Loading config", getEnv("S3_BUCKET", ""))
 	return &Config{
 		Port:         getEnv("PORT", "8080"),
 		S3Bucket:     getEnv("S3_BUCKET", ""),
@@ -29,11 +28,12 @@ func Load() *Config {
 }
 
 type StorageOptions struct {
-	OriginFolder string   `yaml:"origin_folder"`
-	ThumbFolder  string   `yaml:"thumb_folder"`
-	Sizes        []string `yaml:"sizes"`
-	Quality      int      `yaml:"quality"`
-	ConvertTo    string   `yaml:"convert_to"`
+	OriginFolder  string   `yaml:"origin_folder"`
+	ThumbFolder   string   `yaml:"thumb_folder"`
+	Sizes         []string `yaml:"sizes"`
+	Quality       int      `yaml:"quality"`
+	ConvertTo     string   `yaml:"convert_to"`
+	CacheDuration int      `yaml:"cache_duration"` // in seconds
 }
 
 type StorageConfig struct {
@@ -42,17 +42,17 @@ type StorageConfig struct {
 
 func LoadStorageConfig() (*StorageConfig, error) {
 	configPath := getEnv("STORAGE_CONFIG_PATH", "storage-config.yaml")
-	
+
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read storage config: %w", err)
 	}
-	
+
 	var config StorageConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse storage config: %w", err)
 	}
-	
+
 	return &config, nil
 }
 
@@ -60,12 +60,12 @@ func (sc *StorageConfig) GetStorageOptions(imageType string) *StorageOptions {
 	if options, exists := sc.StorageOptions[imageType]; exists {
 		return &options
 	}
-	
+
 	// Return default if type not found
 	if defaultOptions, exists := sc.StorageOptions["default"]; exists {
 		return &defaultOptions
 	}
-	
+
 	// Fallback to hardcoded default
 	return DefaultStorageOptions()
 }

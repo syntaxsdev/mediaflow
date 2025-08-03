@@ -125,6 +125,28 @@ func (s *ImageService) createThumbnailPathForSize(originalPath, size, newType st
 	return fmt.Sprintf("%s_%s%s", baseName, size, ext)
 }
 
+// GetImage gets the image from the S3 bucket
+func (s *ImageService) GetImage(ctx context.Context, so *config.StorageOptions, original bool, baseImageName, size string) ([]byte, error) {
+	var path string
+	if original {
+		path = fmt.Sprintf("%s/%s", so.OriginFolder, baseImageName)
+	} else {
+		if size == "" {
+			size = "256"
+		}
+		path = fmt.Sprintf("%s/%s_%s", so.ThumbFolder, baseImageName, size)
+	}
+
+	path = fmt.Sprintf("%s.%s", path, so.ConvertTo)
+
+	imageData, err := s.s3Client.GetObject(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image from S3: %w", err)
+	}
+
+	return imageData, nil
+}
+
 // Read the first 512 bytes to determine the MIME type
 func DetermineMimeType(file multipart.File) (string, error) {
 	buf := make([]byte, 512)

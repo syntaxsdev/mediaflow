@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	utils "mediaflow/internal"
@@ -43,6 +44,7 @@ func NewClient(ctx context.Context, region, bucket, accessKey, secretKey string)
 }
 
 func (c *Client) GetObject(ctx context.Context, key string) ([]byte, error) {
+	fmt.Println("Getting object", key)
 	result, err := c.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
