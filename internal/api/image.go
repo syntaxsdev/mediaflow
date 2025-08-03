@@ -100,8 +100,8 @@ func (h *ImageAPI) HandleAvatar(w http.ResponseWriter, r *http.Request, imageDat
 		OriginFolder: "originals",
 		ThumbFolder:  "thumbnails",
 		Sizes:        []string{"256", "512"},
-		Quality:      80,
-		ConvertTo:    "webp",
+		Quality:      90,
+		ConvertTo:    "jpg",
 	}
 	if r.Method == http.MethodPost {
 		err := h.imageService.UploadImage(h.ctx, so, imageData, thumbType, imagePath)

@@ -117,70 +117,16 @@ func (s *ImageService) generateThumbnail(imageData []byte, width, quality int, c
 
 func (s *ImageService) createThumbnailPathForSize(originalPath, size, newType string) string {
 	ext := fmt.Sprintf(".%s", newType)
-	if ext == "" {
-		ext = filepath.Ext(originalPath)
+	origExt := filepath.Ext(originalPath)
+	if ext == "." {
+		ext = origExt
 	}
-	fmt.Println("ext", ext)
-	baseName := strings.TrimSuffix(originalPath, ext)
+	baseName := strings.TrimSuffix(originalPath, origExt)
 	return fmt.Sprintf("%s_%s%s", baseName, size, ext)
 }
 
-// func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOptions, image []byte, imagePath string) error {
-// 	orig_path := fmt.Sprintf("%s/%s", so.OriginFolder, imagePath)
-// 	thumb_path := fmt.Sprintf("%s/%s", so.ThumbFolder, imagePath)
-// }
-
-// func (s *ImageService) ProcessImage(ctx context.Context, so *config.StorageOptions, imagePath string) ([]byte, string, error) {
-// 	if so == nil {
-// 		so = config.DefaultStorageOptions()
-// 	}
-// 	orig_path := fmt.Sprintf("%s/%s", so.OriginFolder, imagePath)
-// 	thumb_path := fmt.Sprintf("%s/%s", so.ThumbFolder, imagePath)
-
-// 	imageData, err := s.s3Client.GetObject(ctx, orig_path)
-// 	if err != nil {
-// 		return nil, "", fmt.Errorf("failed to fetch image from S3: %w", err)
-// 	}
-
-// 	img, format, err := image.Decode(bytes.NewReader(imageData))
-// 	if err != nil {
-// 		return nil, "", fmt.Errorf("failed to decode image: %w", err)
-// 	}
-
-// 	resizedImg := imaging.Resize(img, width, 0, imaging.Lanczos)
-
-// 	var buf bytes.Buffer
-// 	var contentType string
-
-// 	ext := strings.ToLower(filepath.Ext(imagePath))
-// 	switch ext {
-// 	case ".jpg", ".jpeg":
-// 		contentType = "image/jpeg"
-// 		opts := &jpeg.Options{Quality: quality}
-// 		err = jpeg.Encode(&buf, resizedImg, opts)
-// 	case ".png":
-// 		contentType = "image/png"
-// 		err = png.Encode(&buf, resizedImg)
-// 	default:
-// 		if format == "jpeg" {
-// 			contentType = "image/jpeg"
-// 			opts := &jpeg.Options{Quality: quality}
-// 			err = jpeg.Encode(&buf, resizedImg, opts)
-// 		} else {
-// 			contentType = "image/png"
-// 			err = png.Encode(&buf, resizedImg)
-// 		}
-// 	}
-
-// 	if err != nil {
-// 		return nil, "", fmt.Errorf("failed to encode processed image: %w", err)
-// 	}
-
-// 	return buf.Bytes(), contentType, nil
-// }
-
+// Read the first 512 bytes to determine the MIME type
 func DetermineMimeType(file multipart.File) (string, error) {
-	// Read the first 512 bytes to determine the MIME type
 	buf := make([]byte, 512)
 	n, err := file.Read(buf)
 	if err != nil && err != io.EOF {
