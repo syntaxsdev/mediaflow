@@ -10,19 +10,24 @@ import (
 	"syscall"
 	"time"
 
+	utils "mediacdn/internal"
+	"mediacdn/internal/api"
 	"mediacdn/internal/config"
-	"mediacdn/internal/handler"
 	"mediacdn/internal/service"
 )
 
 func main() {
 	cfg := config.Load()
-
+	ctx := context.Background()
+	utils.ProcessId <- os.Getpid()
 	imageService := service.NewImageService(cfg)
-	imageHandler := handler.NewImageHandler(imageService)
+	imageAPI := api.NewImageAPI(ctx, imageService)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/thumb/photos/", imageHandler.HandleThumbnail)
+
+	// APIs
+	mux.HandleFunc("/thumb/{type}/{image_id}", imageAPI.HandleThumbnailTypes)
+	mux.HandleFunc("/originals/photos/", imageAPI.HandleThumbnail)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
@@ -37,22 +42,21 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Starting server on port %s", cfg.Port)
+		log.Printf("Starting server on port %s 🚀", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed to start: %v", err)
+			log.Fatalf("Server failed to start 🚨: %v", err)
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	signal.Notify(utils.QuitChan, syscall.SIGINT, syscall.SIGTERM)
+	<-utils.QuitChan
 
-	log.Println("Shutting down server...")
+	log.Println("Shutting down server... 🛑")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		log.Fatalf("Server forced to shutdown 🚨: %v", err)
 	}
 
 	log.Println("Server exited")
