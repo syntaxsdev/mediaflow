@@ -8,19 +8,21 @@ import (
 	"strconv"
 	"strings"
 
-	"mediacdn/internal/config"
-	"mediacdn/internal/service"
+	"mediaflow/internal/config"
+	"mediaflow/internal/service"
 )
 
 type ImageAPI struct {
-	imageService *service.ImageService
-	ctx          context.Context
+	imageService  *service.ImageService
+	storageConfig *config.StorageConfig
+	ctx           context.Context
 }
 
-func NewImageAPI(ctx context.Context, imageService *service.ImageService) *ImageAPI {
+func NewImageAPI(ctx context.Context, imageService *service.ImageService, storageConfig *config.StorageConfig) *ImageAPI {
 	return &ImageAPI{
-		imageService: imageService,
-		ctx:          ctx,
+		imageService:  imageService,
+		storageConfig: storageConfig,
+		ctx:           ctx,
 	}
 }
 
@@ -90,19 +92,13 @@ func (h *ImageAPI) HandleThumbnailTypes(w http.ResponseWriter, r *http.Request) 
 	}
 
 	switch thumbType {
-	case "profile":
+	case "avatar":
 		h.HandleAvatar(w, r, imageData, thumbType, fileName)
 	}
 }
 
 func (h *ImageAPI) HandleAvatar(w http.ResponseWriter, r *http.Request, imageData []byte, thumbType, imagePath string) {
-	so := &config.StorageOptions{
-		OriginFolder: "originals",
-		ThumbFolder:  "thumbnails",
-		Sizes:        []string{"256", "512"},
-		Quality:      90,
-		ConvertTo:    "jpg",
-	}
+	so := h.storageConfig.GetStorageOptions("avatar")
 	if r.Method == http.MethodPost {
 		err := h.imageService.UploadImage(h.ctx, so, imageData, thumbType, imagePath)
 		if err != nil {

@@ -1,0 +1,28 @@
+storage_options:
+  avatar:
+    origin_folder: "originals/avatars"
+    thumb_folder: "thumbnails/avatars"
+    sizes: ["128", "256"]
+    quality: 90
+    convert_to: "webp"
+  
+  photo:
+    origin_folder: "originals/photos"
+    thumb_folder: "thumbnails/photos"
+    sizes: ["256", "512", "1024"]
+    quality: 90
+    convert_to: "webp"
+  
+  banner:
+    origin_folder: "originals/banners"
+    thumb_folder: "thumbnails/banners"
+    sizes: ["512", "1024", "2048"]
+    quality: 95
+    convert_to: "webp"
+  
+  default:
+    origin_folder: "originals"
+    thumb_folder: "thumbnails"
+    sizes: ["256", "512"]
+    quality: 90
+    convert_to: "webp"

@@ -10,18 +10,22 @@ import (
 	"syscall"
 	"time"
 
-	utils "mediacdn/internal"
-	"mediacdn/internal/api"
-	"mediacdn/internal/config"
-	"mediacdn/internal/service"
+	utils "mediaflow/internal"
+	"mediaflow/internal/api"
+	"mediaflow/internal/config"
+	"mediaflow/internal/service"
 )
 
 func main() {
 	cfg := config.Load()
 	ctx := context.Background()
 	utils.ProcessId <- os.Getpid()
+	storageConfig, err := config.LoadStorageConfig()
+	if err != nil {
+		log.Fatalf("🚨 Failed to load storage config: %v", err)
+	}
 	imageService := service.NewImageService(cfg)
-	imageAPI := api.NewImageAPI(ctx, imageService)
+	imageAPI := api.NewImageAPI(ctx, imageService, storageConfig)
 
 	mux := http.NewServeMux()
 

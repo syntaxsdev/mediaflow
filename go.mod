@@ -1,4 +1,4 @@
-module mediacdn
+module mediaflow
 
 go 1.24.5
 
@@ -27,4 +27,5 @@ require (
 	github.com/aws/smithy-go v1.22.5 // indirect
 	github.com/chai2010/webp v1.4.0 // indirect
 	golang.org/x/image v0.29.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

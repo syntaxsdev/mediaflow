@@ -3,8 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
+	
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -29,25 +29,45 @@ func Load() *Config {
 }
 
 type StorageOptions struct {
-	OriginFolder string
-	ThumbFolder  string
-	Sizes        []string
-	Quality      int
-	ConvertTo    string
+	OriginFolder string   `yaml:"origin_folder"`
+	ThumbFolder  string   `yaml:"thumb_folder"`
+	Sizes        []string `yaml:"sizes"`
+	Quality      int      `yaml:"quality"`
+	ConvertTo    string   `yaml:"convert_to"`
 }
 
-func LoadStorageOptions() *StorageOptions {
-	return &StorageOptions{
-		OriginFolder: getEnv("ORIGIN_FOLDER", ""),
-		ThumbFolder:  getEnv("THUMB_FOLDER", ""),
-		Sizes:        strings.Split(getEnv("SIZES", ""), ","),
-		Quality: func() int {
-			if quality, err := strconv.Atoi(getEnv("QUALITY", "90")); err == nil {
-				return quality
-			}
-			return 90
-		}(),
+type StorageConfig struct {
+	StorageOptions map[string]StorageOptions `yaml:"storage_options"`
+}
+
+func LoadStorageConfig() (*StorageConfig, error) {
+	configPath := getEnv("STORAGE_CONFIG_PATH", "storage-config.yaml")
+	
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read storage config: %w", err)
 	}
+	
+	var config StorageConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse storage config: %w", err)
+	}
+	
+	return &config, nil
+}
+
+func (sc *StorageConfig) GetStorageOptions(imageType string) *StorageOptions {
+	if options, exists := sc.StorageOptions[imageType]; exists {
+		return &options
+	}
+	
+	// Return default if type not found
+	if defaultOptions, exists := sc.StorageOptions["default"]; exists {
+		return &defaultOptions
+	}
+	
+	// Fallback to hardcoded default
+	return DefaultStorageOptions()
 }
 
 func DefaultStorageOptions() *StorageOptions {

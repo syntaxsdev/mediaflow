@@ -16,8 +16,8 @@ import (
 
 	"github.com/chai2010/webp"
 
-	"mediacdn/internal/config"
-	"mediacdn/internal/s3"
+	"mediaflow/internal/config"
+	"mediaflow/internal/s3"
 
 	"github.com/disintegration/imaging"
 )
