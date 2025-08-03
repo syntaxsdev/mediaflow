@@ -1,6 +1,6 @@
 run: build
 	@echo "Starting server 🚀"
-	@set -a && . ./.env && ./media-cdn
+	@set -a && . ./.env && ./mediaflow
 
 run-air:
 	@echo "Starting server with air 🚀"
@@ -9,9 +9,9 @@ run-air:
 
 build:
 	@echo "Building server 🔨"
-	@go build -o media-cdn main.go
+	@go build -o mediaflow main.go
 	@echo "Server built successfully 🎉"
 
 clean:
 	@echo "Cleaning up 🧹"
-	@rm -f media-cdn
+	@rm -f mediaflow
