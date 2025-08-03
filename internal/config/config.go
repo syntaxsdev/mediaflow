@@ -1,7 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -14,6 +17,7 @@ type Config struct {
 }
 
 func Load() *Config {
+	fmt.Println("Loading config", getEnv("S3_BUCKET", ""))
 	return &Config{
 		Port:         getEnv("PORT", "8080"),
 		S3Bucket:     getEnv("S3_BUCKET", ""),
@@ -21,6 +25,37 @@ func Load() *Config {
 		AWSAccessKey: getEnv("AWS_ACCESS_KEY_ID", ""),
 		AWSSecretKey: getEnv("AWS_SECRET_ACCESS_KEY", ""),
 		CacheMaxAge:  getEnv("CACHE_MAX_AGE", "86400"),
+	}
+}
+
+type StorageOptions struct {
+	OriginFolder string
+	ThumbFolder  string
+	Sizes        []string
+	Quality      int
+	ConvertTo    string
+}
+
+func LoadStorageOptions() *StorageOptions {
+	return &StorageOptions{
+		OriginFolder: getEnv("ORIGIN_FOLDER", ""),
+		ThumbFolder:  getEnv("THUMB_FOLDER", ""),
+		Sizes:        strings.Split(getEnv("SIZES", ""), ","),
+		Quality: func() int {
+			if quality, err := strconv.Atoi(getEnv("QUALITY", "90")); err == nil {
+				return quality
+			}
+			return 90
+		}(),
+	}
+}
+
+func DefaultStorageOptions() *StorageOptions {
+	return &StorageOptions{
+		OriginFolder: "originals",
+		ThumbFolder:  "thumbnails",
+		Sizes:        []string{"256", "512", "1024"},
+		Quality:      90,
 	}
 }
 

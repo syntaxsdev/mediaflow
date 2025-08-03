@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 
+	utils "mediacdn/internal"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -25,7 +27,9 @@ func NewClient(ctx context.Context, region, bucket, accessKey, secretKey string)
 			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
 		)
 	} else {
-		cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
+		// Quit if no credentials are provided
+		utils.Shutdown("No AWS credentials provided, exiting...")
+		// cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	}
 
 	if err != nil {
@@ -49,4 +53,13 @@ func (c *Client) GetObject(ctx context.Context, key string) ([]byte, error) {
 	defer result.Body.Close()
 
 	return io.ReadAll(result.Body)
+}
+
+func (c *Client) PutObject(ctx context.Context, key string, body io.Reader) error {
+	_, err := c.s3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(key),
+		Body:   body,
+	})
+	return err
 }

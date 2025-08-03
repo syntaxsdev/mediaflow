@@ -25,5 +25,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.31.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.35.1 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
-	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
+	github.com/chai2010/webp v1.4.0 // indirect
+	golang.org/x/image v0.29.0 // indirect
 )
