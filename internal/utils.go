@@ -32,3 +32,16 @@ func BaseName(path string) string {
 	}
 	return strings.TrimSuffix(path, ext)
 }
+
+// BaseName returns the base name of a path without the extension
+func ExtFromMime(mime string) string {
+	switch mime {
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	}
+	return ""
+}

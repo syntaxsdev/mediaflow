@@ -27,46 +27,13 @@ func NewImageAPI(ctx context.Context, imageService *service.ImageService, storag
 	}
 }
 
-func (h *ImageAPI) HandleThumbnail(w http.ResponseWriter, r *http.Request) {
-	// if r.Method != http.MethodGet {
-	// 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	// 	return
-	// }
-
-	// imagePath := strings.TrimPrefix(r.URL.Path, "/thumb/photos/")
-	// if imagePath == "" {
-	// 	http.Error(w, "Image ID required", http.StatusBadRequest)
-	// 	return
-	// }
-
-	// width, quality, err := parseQueryParams(r)
-	// if err != nil {
-	// 	http.Error(w, err.Error(), http.StatusBadRequest)
-	// 	return
-	// }
-
-	// processedImage, contentType, err := h.imageService.ProcessImage(r.Context(), nil, imagePath, width, quality)
-	// if err != nil {
-	// 	log.Printf("Error processing image %s: %v", imagePath, err)
-	// http.Error(w, "Internal server error", http.StatusInternalServerError)
-	// 	return
-	// }
-
-	// w.Header().Set("Content-Type", contentType)
-	// w.Header().Set("Cache-Control", "public, max-age=86400")
-	// w.Header().Set("ETag", fmt.Sprintf(`"%s_%d_%d"`, imagePath, width, quality))
-
-	// if _, err := w.Write(processedImage); err != nil {
-	// 	log.Printf("Error writing response: %v", err)
-	// }
-}
-
 func (h *ImageAPI) HandleThumbnailTypes(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/thumb/"), "/")
 	thumbType := parts[0]
 	fileName := parts[1]
 
 	var imageData []byte
+	var mimeType string
 
 	if r.Method == http.MethodPost {
 		file, _, err := r.FormFile("file")
@@ -76,7 +43,7 @@ func (h *ImageAPI) HandleThumbnailTypes(w http.ResponseWriter, r *http.Request) 
 		}
 		defer file.Close()
 
-		mimeType, err := service.DetermineMimeType(file)
+		mimeType, err = service.DetermineMimeType(file)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -97,9 +64,9 @@ func (h *ImageAPI) HandleThumbnailTypes(w http.ResponseWriter, r *http.Request) 
 
 func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, imageData []byte, thumbType, imagePath string) {
 	so := h.storageConfig.GetStorageOptions(thumbType)
-
+	baseName := utils.BaseName(imagePath)
 	if r.Method == http.MethodPost {
-		err := h.imageService.UploadImage(h.ctx, so, imageData, thumbType, imagePath)
+		err := h.imageService.UploadImage(h.ctx, so, imageData, thumbType, baseName)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -112,9 +79,6 @@ func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, i
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		// size := fmt.Sprintf("%d_%d", width, quality)
-
-		baseName := utils.BaseName(imagePath)
 		imageData, err := h.imageService.GetImage(h.ctx, so, false, baseName, size)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -133,29 +97,40 @@ func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, i
 	}
 }
 
+func (h *ImageAPI) HandleOriginals(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/originals/"), "/")
+	thumbType := parts[0]
+	fileName := parts[1]
+
+	h.HandleThumbnailType(w, r, nil, thumbType, fileName)
+}
+
+// Utils that belong here
+
+// Parse query params for width and quality
 func parseQueryParams(r *http.Request) (width, quality string, err error) {
-	var w int = 256
-	var q int = 80
+	var w int
+	var q int
 
 	if width := r.URL.Query().Get("width"); width != "" {
 		w, err = strconv.Atoi(width)
 		if err != nil {
-			return "0", "0", fmt.Errorf("invalid width parameter")
+			return "", "", fmt.Errorf("invalid width parameter")
 		}
 		if w <= 0 || w > 2048 {
-			return "0", "0", fmt.Errorf("width must be between 1 and 2048")
+			return "", "", fmt.Errorf("width must be between 1 and 2048")
 		}
 	}
 
 	if quality := r.URL.Query().Get("quality"); quality != "" {
 		q, err = strconv.Atoi(quality)
 		if err != nil {
-			return "0", "0", fmt.Errorf("invalid quality parameter")
+			return "", "", fmt.Errorf("invalid quality parameter")
 		}
 		if q < 1 || q > 100 {
-			return "0", "0", fmt.Errorf("quality must be between 1 and 100")
+			return "", "", fmt.Errorf("quality must be between 1 and 100")
 		}
 	}
 
-	return fmt.Sprintf("%d", w), fmt.Sprintf("%d", q), nil
+	return width, quality, nil
 }
