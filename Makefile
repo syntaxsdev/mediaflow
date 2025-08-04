@@ -2,6 +2,7 @@ IMAGE_NAME=mediaflow
 IMAGE_TAG=latest
 IMAGE_REPO=docker.io/syntaxsdev
 IMAGE_FULL_NAME=$(IMAGE_REPO)/$(IMAGE_NAME):$(IMAGE_TAG)
+# ARCH := $(shell uname -m)
 
 run: build
 	@echo "Starting server 🚀"
@@ -35,14 +36,9 @@ build-image: setup-buildx
 	@echo "Image built successfully 🎉"
 	@echo "Note: Multi-platform images are not loaded locally. Use --push to push to registry."
 
-build-image-single: setup-buildx
-	@echo "Building single platform image (AMD64) 🔨"
-	@docker buildx build --platform linux/amd64 -t $(IMAGE_FULL_NAME) --load .
-	@echo "Image built and loaded successfully 🎉"
-
 build-image-arm64: setup-buildx
 	@echo "Building image for ARM64 🔨"
-	@DOCKER_BUILDKIT=1 docker buildx build --platform linux/arm64 --output type=docker -t $(IMAGE_FULL_NAME) -f Dockerfile.arm64 .
+	@DOCKER_BUILDKIT=1 docker buildx build --platform linux/arm64 --builder default --load -t $(IMAGE_FULL_NAME) -f Dockerfile .
 	@echo "ARM64 image built successfully 🎉"
 
 build-image-all: setup-buildx
@@ -58,7 +54,7 @@ push-image: setup-buildx
 
 run-image:
 	@echo "Running image 🚀"
-	@docker run -p 8080:8080 $(IMAGE_FULL_NAME)
+	@set -a && . ./.env && docker run -p 8080:8080 --replace -n mediaflow-server --rm $(IMAGE_FULL_NAME)
 
 clean:
 	@echo "Cleaning up 🧹"
