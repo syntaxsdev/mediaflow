@@ -10,6 +10,7 @@ import (
 
 	utils "mediaflow/internal"
 	"mediaflow/internal/config"
+	"mediaflow/internal/models"
 	"mediaflow/internal/service"
 )
 
@@ -38,24 +39,25 @@ func (h *ImageAPI) HandleThumbnailTypes(w http.ResponseWriter, r *http.Request) 
 	if r.Method == http.MethodPost {
 		file, _, err := r.FormFile("file")
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			models.NewResponse(err.Error()).WriteError(w, http.StatusBadRequest)
 			return
 		}
 		defer file.Close()
 
 		mimeType, err = service.DetermineMimeType(file)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			models.NewResponse(err.Error()).WriteError(w, http.StatusBadRequest)
 			return
 		}
 		if mimeType != "image/jpeg" && mimeType != "image/png" {
-			http.Error(w, "Invalid file type", http.StatusBadRequest)
+			models.NewResponse("Invalid file type").WriteError(w, http.StatusBadRequest)
 			return
 		}
 		imageData, err = io.ReadAll(file)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			models.NewResponse(err.Error()).WriteError(w, http.StatusBadRequest)
 			return
+
 		}
 	}
 
@@ -68,7 +70,7 @@ func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, i
 	if r.Method == http.MethodPost {
 		err := h.imageService.UploadImage(h.ctx, so, imageData, thumbType, baseName)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			models.NewResponse(err.Error()).WriteError(w, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -76,12 +78,12 @@ func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, i
 	if r.Method == http.MethodGet {
 		size, _, err := parseQueryParams(r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			models.NewResponse(err.Error()).WriteError(w, http.StatusBadRequest)
 			return
 		}
 		imageData, err := h.imageService.GetImage(h.ctx, so, false, baseName, size)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			models.NewResponse(err.Error()).WriteError(w, http.StatusInternalServerError)
 			return
 		}
 		cd := so.CacheDuration
