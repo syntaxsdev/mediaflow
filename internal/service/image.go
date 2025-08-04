@@ -132,7 +132,10 @@ func (s *ImageService) GetImage(ctx context.Context, so *config.StorageOptions, 
 		path = fmt.Sprintf("%s/%s", so.OriginFolder, baseImageName)
 	} else {
 		if size == "" {
-			size = "256"
+			if so.DefaultSize == "" {
+				return nil, fmt.Errorf("please specify a size, as `default_size` is not set for this configuration")
+			}
+			size = so.DefaultSize
 		}
 		path = fmt.Sprintf("%s/%s_%s", so.ThumbFolder, baseImageName, size)
 	}

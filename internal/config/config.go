@@ -31,6 +31,7 @@ type StorageOptions struct {
 	OriginFolder  string   `yaml:"origin_folder"`
 	ThumbFolder   string   `yaml:"thumb_folder"`
 	Sizes         []string `yaml:"sizes"`
+	DefaultSize   string   `yaml:"default_size"`
 	Quality       int      `yaml:"quality"`
 	ConvertTo     string   `yaml:"convert_to"`
 	CacheDuration int      `yaml:"cache_duration"` // in seconds
@@ -41,7 +42,7 @@ type StorageConfig struct {
 }
 
 func LoadStorageConfig() (*StorageConfig, error) {
-	configPath := getEnv("STORAGE_CONFIG_PATH", "storage-config.yaml")
+	configPath := getEnv("STORAGE_CONFIG_PATH", "examples/storage-config.yaml")
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
