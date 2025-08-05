@@ -2,9 +2,10 @@ package s3
 
 import (
 	"context"
+	"fmt"
 	"io"
-
 	utils "mediaflow/internal"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -26,14 +27,14 @@ func NewClient(ctx context.Context, region, bucket, accessKey, secretKey string)
 			config.WithRegion(region),
 			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
 		)
+	} else if os.Getenv("ECS_CONTAINER_METADATA_URI_V4") != "" {
+		cfg, err = config.LoadDefaultConfig(ctx)
 	} else {
-		// Quit if no credentials are provided
-		utils.Shutdown("No AWS credentials provided, exiting...")
-		// cfg, err = config.LoadDefaultConfig(ctx, config.WithRegion(region))
+		err = fmt.Errorf("no AWS credentials provided")
 	}
 
 	if err != nil {
-		return nil, err
+		utils.Shutdown(fmt.Sprintf("🚨 Failed to load AWS config: %v", err))
 	}
 
 	return &Client{
