@@ -21,11 +21,11 @@ func main() {
 	cfg := config.Load()
 	ctx := context.Background()
 	utils.ProcessId <- os.Getpid()
-	storageConfig, err := config.LoadStorageConfig()
+	imageService := service.NewImageService(cfg)
+	storageConfig, err := config.LoadStorageConfig(imageService.S3Client, cfg)
 	if err != nil {
 		log.Fatalf("🚨 Failed to load storage config: %v", err)
 	}
-	imageService := service.NewImageService(cfg)
 	imageAPI := api.NewImageAPI(ctx, imageService, storageConfig)
 
 	mux := http.NewServeMux()

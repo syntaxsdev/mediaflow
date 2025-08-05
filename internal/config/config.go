@@ -1,8 +1,11 @@
 package config
 
 import (
+	"context"
 	"fmt"
+	"mediaflow/internal/s3"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -41,20 +44,41 @@ type StorageConfig struct {
 	StorageOptions map[string]StorageOptions `yaml:"storage_options"`
 }
 
-func LoadStorageConfig() (*StorageConfig, error) {
+func LoadStorageConfig(s3 *s3.Client, config *Config) (*StorageConfig, error) {
 	configPath := getEnv("STORAGE_CONFIG_PATH", "examples/storage-config.yaml")
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read storage config: %w", err)
+	var data []byte
+	var err error
+
+	// Extract S3 key from s3:// path
+	if len(configPath) > 5 && configPath[:5] == "s3://" {
+		s3Path := configPath[5:]
+		bucket := strings.Split(s3Path, "/")[0]
+
+		if bucket != config.S3Bucket {
+			return nil, fmt.Errorf("bucket mismatch: %s != %s", bucket, config.S3Bucket)
+		}
+
+		key := strings.Join(strings.Split(s3Path, "/")[1:], "/")
+
+		data, err = s3.GetObject(context.Background(), key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get storage config from S3: %w", err)
+		}
+		fmt.Printf("🔍 Loaded storage config from S3: %s\n", key)
+	} else {
+		data, err = os.ReadFile(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read storage config: %w", err)
+		}
 	}
 
-	var config StorageConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	var storageConfig StorageConfig
+	if err := yaml.Unmarshal(data, &storageConfig); err != nil {
 		return nil, fmt.Errorf("failed to parse storage config: %w", err)
 	}
 
-	return &config, nil
+	return &storageConfig, nil
 }
 
 func (sc *StorageConfig) GetStorageOptions(imageType string) *StorageOptions {

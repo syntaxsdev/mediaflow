@@ -23,7 +23,7 @@ import (
 )
 
 type ImageService struct {
-	s3Client *s3.Client
+	S3Client *s3.Client
 	config   *config.Config
 }
 
@@ -40,7 +40,7 @@ func NewImageService(cfg *config.Config) *ImageService {
 	}
 
 	return &ImageService{
-		s3Client: s3Client,
+		S3Client: s3Client,
 		config:   cfg,
 	}
 }
@@ -49,7 +49,7 @@ func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOption
 	orig_path := fmt.Sprintf("%s/%s", so.OriginFolder, imagePath)
 	convertType := so.ConvertTo
 	// Upload original image
-	err := s.s3Client.PutObject(ctx, orig_path, bytes.NewReader(imageData))
+	err := s.S3Client.PutObject(ctx, orig_path, bytes.NewReader(imageData))
 	if err != nil {
 		return fmt.Errorf("failed to upload original image to S3: %w", err)
 	}
@@ -72,7 +72,7 @@ func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOption
 		thumbFullPath := fmt.Sprintf("%s/%s", so.ThumbFolder, thumbSizePath)
 
 		// Upload thumbnail
-		err = s.s3Client.PutObject(ctx, thumbFullPath, bytes.NewReader(thumbnailData))
+		err = s.S3Client.PutObject(ctx, thumbFullPath, bytes.NewReader(thumbnailData))
 		if err != nil {
 			return fmt.Errorf("failed to upload thumbnail for size %d: %w", size, err)
 		}
@@ -141,7 +141,7 @@ func (s *ImageService) GetImage(ctx context.Context, so *config.StorageOptions, 
 		path = fmt.Sprintf("%s/%s_%s.%s", so.ThumbFolder, baseImageName, size, so.ConvertTo)
 	}
 
-	imageData, err := s.s3Client.GetObject(ctx, path)
+	imageData, err := s.S3Client.GetObject(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image from S3: %w", err)
 	}
