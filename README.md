@@ -191,7 +191,7 @@ MediaFlow supports automatic AWS S3 authentication through IAM roles, making it 
 
 ```bash
 # Clone and setup
-git clone <repo-url>
+git clone https://github.com/syntaxsdev/mediaflow
 cd mediaflow
 cp .env.example .env  # Edit with your AWS credentials
 
