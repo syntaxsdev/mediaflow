@@ -31,7 +31,7 @@ func main() {
 
 	// APIs
 	mux.HandleFunc("/thumb/{type}/{image_id}", imageAPI.HandleThumbnailTypes)
-	mux.HandleFunc("/originals/photos/", imageAPI.HandleThumbnail)
+	mux.HandleFunc("/originals/{type}/{image_id}", imageAPI.HandleOriginals)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")

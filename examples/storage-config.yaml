@@ -3,7 +3,7 @@ storage_options:
     origin_folder: "originals/avatars"
     thumb_folder: "thumbnails/avatars"
     sizes: ["128", "256"]
-    default_size: "128"
+    default_size: "256"
     quality: 90
     convert_to: "webp"
   

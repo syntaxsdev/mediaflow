@@ -131,16 +131,15 @@ func (s *ImageService) GetImage(ctx context.Context, so *config.StorageOptions, 
 	if original {
 		path = fmt.Sprintf("%s/%s", so.OriginFolder, baseImageName)
 	} else {
-		if size == "" {
+		if size == "" && !original {
 			if so.DefaultSize == "" {
 				return nil, fmt.Errorf("please specify a size, as `default_size` is not set for this configuration")
 			}
 			size = so.DefaultSize
 		}
-		path = fmt.Sprintf("%s/%s_%s", so.ThumbFolder, baseImageName, size)
+		// example -> folder/file_size.ext
+		path = fmt.Sprintf("%s/%s_%s.%s", so.ThumbFolder, baseImageName, size, so.ConvertTo)
 	}
-
-	path = fmt.Sprintf("%s.%s", path, so.ConvertTo)
 
 	imageData, err := s.s3Client.GetObject(ctx, path)
 	if err != nil {

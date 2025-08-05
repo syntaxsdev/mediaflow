@@ -103,11 +103,24 @@ func (h *ImageAPI) HandleOriginals(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/originals/"), "/")
 	thumbType := parts[0]
 	fileName := parts[1]
+	baseName := utils.BaseName(fileName)
 
-	h.HandleThumbnailType(w, r, nil, thumbType, fileName)
+	so := h.storageConfig.GetStorageOptions(thumbType)
+	if r.Method == http.MethodGet {
+		imageData, err := h.imageService.GetImage(h.ctx, so, true, baseName, "")
+		if err != nil {
+			models.NewResponse(err.Error()).WriteError(w, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "image/"+so.ConvertTo)
+		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", so.CacheDuration))
+		w.Header().Set("ETag", fmt.Sprintf(`"%s/%s"`, thumbType, baseName))
+		w.Write(imageData)
+	}
+
 }
 
-// Utils that belong here
+// Helpers that belong here
 
 // Parse query params for width and quality
 func parseQueryParams(r *http.Request) (width, quality string, err error) {
