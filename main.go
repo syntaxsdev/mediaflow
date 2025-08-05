@@ -13,7 +13,7 @@ import (
 	utils "mediaflow/internal"
 	"mediaflow/internal/api"
 	"mediaflow/internal/config"
-	"mediaflow/internal/models"
+	"mediaflow/internal/response"
 	"mediaflow/internal/service"
 )
 
@@ -34,7 +34,7 @@ func main() {
 	mux.HandleFunc("/thumb/{type}/{image_id}", imageAPI.HandleThumbnailTypes)
 	mux.HandleFunc("/originals/{type}/{image_id}", imageAPI.HandleOriginals)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		models.NewResponse("OK").Write(w)
+		response.JSON("OK").Write(w)
 	})
 
 	server := &http.Server{

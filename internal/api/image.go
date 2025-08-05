@@ -10,7 +10,7 @@ import (
 
 	utils "mediaflow/internal"
 	"mediaflow/internal/config"
-	"mediaflow/internal/models"
+	"mediaflow/internal/response"
 	"mediaflow/internal/service"
 )
 
@@ -39,23 +39,23 @@ func (h *ImageAPI) HandleThumbnailTypes(w http.ResponseWriter, r *http.Request) 
 	if r.Method == http.MethodPost {
 		file, _, err := r.FormFile("file")
 		if err != nil {
-			models.NewResponse(err.Error()).WriteError(w, http.StatusBadRequest)
+			response.JSON(err.Error()).WriteError(w, http.StatusBadRequest)
 			return
 		}
 		defer file.Close()
 
 		mimeType, err = service.DetermineMimeType(file)
 		if err != nil {
-			models.NewResponse(err.Error()).WriteError(w, http.StatusBadRequest)
+			response.JSON(err.Error()).WriteError(w, http.StatusBadRequest)
 			return
 		}
 		if mimeType != "image/jpeg" && mimeType != "image/png" {
-			models.NewResponse("Invalid file type").WriteError(w, http.StatusBadRequest)
+			response.JSON("Invalid file type").WriteError(w, http.StatusBadRequest)
 			return
 		}
 		imageData, err = io.ReadAll(file)
 		if err != nil {
-			models.NewResponse(err.Error()).WriteError(w, http.StatusBadRequest)
+			response.JSON(err.Error()).WriteError(w, http.StatusBadRequest)
 			return
 
 		}
@@ -70,7 +70,7 @@ func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, i
 	if r.Method == http.MethodPost {
 		err := h.imageService.UploadImage(h.ctx, so, imageData, thumbType, baseName)
 		if err != nil {
-			models.NewResponse(err.Error()).WriteError(w, http.StatusInternalServerError)
+			response.JSON(err.Error()).WriteError(w, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -78,12 +78,12 @@ func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, i
 	if r.Method == http.MethodGet {
 		size, _, err := parseQueryParams(r)
 		if err != nil {
-			models.NewResponse(err.Error()).WriteError(w, http.StatusBadRequest)
+			response.JSON(err.Error()).WriteError(w, http.StatusBadRequest)
 			return
 		}
 		imageData, err := h.imageService.GetImage(h.ctx, so, false, baseName, size)
 		if err != nil {
-			models.NewResponse(err.Error()).WriteError(w, http.StatusInternalServerError)
+			response.JSON(err.Error()).WriteError(w, http.StatusInternalServerError)
 			return
 		}
 		cd := so.CacheDuration
@@ -109,7 +109,7 @@ func (h *ImageAPI) HandleOriginals(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		imageData, err := h.imageService.GetImage(h.ctx, so, true, baseName, "")
 		if err != nil {
-			models.NewResponse(err.Error()).WriteError(w, http.StatusInternalServerError)
+			response.JSON(err.Error()).WriteError(w, http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "image/"+so.ConvertTo)
