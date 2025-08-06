@@ -34,6 +34,7 @@ func NewImageService(cfg *config.Config) *ImageService {
 		cfg.S3Bucket,
 		cfg.AWSAccessKey,
 		cfg.AWSSecretKey,
+		cfg.S3Endpoint,
 	)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create S3 client: %v", err))

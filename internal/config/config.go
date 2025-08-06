@@ -12,6 +12,7 @@ import (
 
 type Config struct {
 	Port         string
+	S3Endpoint   string
 	S3Bucket     string
 	S3Region     string
 	AWSAccessKey string
@@ -22,6 +23,7 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:         getEnv("PORT", "8080"),
+		S3Endpoint:   getEnv("S3_ENDPOINT", ""),
 		S3Bucket:     getEnv("S3_BUCKET", ""),
 		S3Region:     getEnv("S3_REGION", "us-east-1"),
 		AWSAccessKey: getEnv("AWS_ACCESS_KEY_ID", ""),

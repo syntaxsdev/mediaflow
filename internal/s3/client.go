@@ -18,7 +18,7 @@ type Client struct {
 	bucket   string
 }
 
-func NewClient(ctx context.Context, region, bucket, accessKey, secretKey string) (*Client, error) {
+func NewClient(ctx context.Context, region, bucket, accessKey, secretKey, endpoint string) (*Client, error) {
 	var cfg aws.Config
 	var err error
 
@@ -37,8 +37,15 @@ func NewClient(ctx context.Context, region, bucket, accessKey, secretKey string)
 		utils.Shutdown(fmt.Sprintf("🚨 Failed to load AWS config: %v", err))
 	}
 
+	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		if endpoint != "" {
+			o.BaseEndpoint = aws.String(endpoint)
+			o.UsePathStyle = true
+		}
+	})
+
 	return &Client{
-		s3Client: s3.NewFromConfig(cfg),
+		s3Client: s3Client,
 		bucket:   bucket,
 	}, nil
 }
