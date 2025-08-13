@@ -2,8 +2,8 @@
 
     WORKDIR /app
     
-    # Install build dependencies (including libwebp for CGO)
-    RUN apk add --no-cache build-base libwebp-dev
+    # Install build dependencies (including libwebp and vips for CGO)
+    RUN apk add --no-cache build-base libwebp-dev vips-dev pkgconfig
     
     COPY go.mod go.sum ./
     RUN go mod download
@@ -15,9 +15,9 @@
     
     FROM alpine:latest
     
-    # Install ca-certificates and libwebp (with fallback for ARM64)
+    # Install ca-certificates, libwebp and vips runtime (with fallback for ARM64)
     RUN apk --no-cache add ca-certificates && \
-        (apk add --no-cache libwebp || echo "libwebp not available for this platform")
+        (apk add --no-cache libwebp vips || echo "libwebp/vips not available for this platform")
     
     # Create a non-root user
     RUN addgroup -g 1001 -S appgroup && \

@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"image"
-	"image/jpeg"
-	"image/png"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -14,12 +11,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/chai2010/webp"
+	"gopkg.in/h2non/bimg.v1"
 
 	"mediaflow/internal/config"
 	"mediaflow/internal/s3"
-
-	"github.com/disintegration/imaging"
 )
 
 type ImageService struct {
@@ -49,33 +44,83 @@ func NewImageService(cfg *config.Config) *ImageService {
 func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOptions, imageData []byte, thumbType, imagePath string) error {
 	orig_path := fmt.Sprintf("%s/%s", so.OriginFolder, imagePath)
 	convertType := so.ConvertTo
-	// Upload original image
-	err := s.S3Client.PutObject(ctx, orig_path, bytes.NewReader(imageData))
-	if err != nil {
-		return fmt.Errorf("failed to upload original image to S3: %w", err)
+	
+	// Upload original image in parallel with thumbnail generation
+	origUploadChan := make(chan error, 1)
+	go func() {
+		err := s.S3Client.PutObject(ctx, orig_path, bytes.NewReader(imageData))
+		if err != nil {
+			origUploadChan <- fmt.Errorf("failed to upload original image to S3: %w", err)
+		} else {
+			origUploadChan <- nil
+		}
+	}()
+
+	// Generate and upload thumbnails in parallel
+	type thumbnailJob struct {
+		sizeStr string
+		data    []byte
+		path    string
+		err     error
+	}
+	
+	thumbJobs := make(chan thumbnailJob, len(so.Sizes))
+	uploadErrors := make(chan error, len(so.Sizes))
+	
+	// Generate thumbnails in parallel
+	for _, sizeStr := range so.Sizes {
+		go func(size string) {
+			sizeInt, err := strconv.Atoi(size)
+			if err != nil {
+				thumbJobs <- thumbnailJob{sizeStr: size, err: fmt.Errorf("invalid size format: %s", size)}
+				return
+			}
+
+			thumbnailData, err := s.generateThumbnail(imageData, sizeInt, so.Quality, convertType)
+			if err != nil {
+				thumbJobs <- thumbnailJob{sizeStr: size, err: fmt.Errorf("failed to generate thumbnail for size %s: %w", size, err)}
+				return
+			}
+
+			thumbSizePath := s.createThumbnailPathForSize(imagePath, size, convertType)
+			thumbFullPath := fmt.Sprintf("%s/%s", so.ThumbFolder, thumbSizePath)
+			
+			thumbJobs <- thumbnailJob{
+				sizeStr: size,
+				data:    thumbnailData,
+				path:    thumbFullPath,
+				err:     nil,
+			}
+		}(sizeStr)
 	}
 
-	// Generate and upload thumbnails for each size
-	for _, sizeStr := range so.Sizes {
-		size, err := strconv.Atoi(sizeStr)
-		if err != nil {
-			return fmt.Errorf("invalid size format: %s", sizeStr)
-		}
+	// Upload thumbnails in parallel as they're generated
+	for i := 0; i < len(so.Sizes); i++ {
+		go func() {
+			job := <-thumbJobs
+			if job.err != nil {
+				uploadErrors <- job.err
+				return
+			}
+			
+			err := s.S3Client.PutObject(ctx, job.path, bytes.NewReader(job.data))
+			if err != nil {
+				uploadErrors <- fmt.Errorf("failed to upload thumbnail for size %s: %w", job.sizeStr, err)
+			} else {
+				uploadErrors <- nil
+			}
+		}()
+	}
 
-		// Generate thumbnail
-		thumbnailData, err := s.generateThumbnail(imageData, size, so.Quality, convertType)
-		if err != nil {
-			return fmt.Errorf("failed to generate thumbnail for size %d: %w", size, err)
-		}
+	// Wait for original upload
+	if err := <-origUploadChan; err != nil {
+		return err
+	}
 
-		// Create thumbnail path with size suffix
-		thumbSizePath := s.createThumbnailPathForSize(imagePath, sizeStr, convertType)
-		thumbFullPath := fmt.Sprintf("%s/%s", so.ThumbFolder, thumbSizePath)
-
-		// Upload thumbnail
-		err = s.S3Client.PutObject(ctx, thumbFullPath, bytes.NewReader(thumbnailData))
-		if err != nil {
-			return fmt.Errorf("failed to upload thumbnail for size %d: %w", size, err)
+	// Wait for all thumbnail uploads
+	for i := 0; i < len(so.Sizes); i++ {
+		if err := <-uploadErrors; err != nil {
+			return err
 		}
 	}
 
@@ -83,37 +128,30 @@ func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOption
 }
 
 func (s *ImageService) generateThumbnail(imageData []byte, width, quality int, convertTo string) ([]byte, error) {
-	// Decode the original image
-	img, _, err := image.Decode(bytes.NewReader(imageData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode image: %w", err)
+	options := bimg.Options{
+		Width:   width,
+		Quality: quality,
 	}
-
-	resizedImg := imaging.Resize(img, width, 0, imaging.Lanczos)
-
-	// Encode the resized image
-	var buf bytes.Buffer
-
-	// Determine content type and encode accordingly
-	if strings.Contains(convertTo, "jpeg") || strings.Contains(convertTo, "jpg") {
-		opts := &jpeg.Options{Quality: quality}
-		err = jpeg.Encode(&buf, resizedImg, opts)
-	} else if strings.Contains(convertTo, "png") {
-		err = png.Encode(&buf, resizedImg)
-	} else if strings.Contains(convertTo, "webp") {
-		opts := &webp.Options{Quality: float32(quality)}
-		err = webp.Encode(&buf, resizedImg, opts)
-	} else {
+	
+	// Set output format
+	switch convertTo {
+	case "webp":
+		options.Type = bimg.WEBP
+	case "jpeg", "jpg":
+		options.Type = bimg.JPEG  
+	case "png":
+		options.Type = bimg.PNG
+	default:
 		// Default to JPEG if format is unknown (fallback)
-		opts := &jpeg.Options{Quality: quality}
-		err = jpeg.Encode(&buf, resizedImg, opts)
+		options.Type = bimg.JPEG
 	}
-
+	
+	resizedData, err := bimg.NewImage(imageData).Process(options)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode thumbnail: %w", err)
+		return nil, fmt.Errorf("failed to process image with bimg: %w", err)
 	}
-
-	return buf.Bytes(), nil
+	
+	return resizedData, nil
 }
 
 func (s *ImageService) createThumbnailPathForSize(originalPath, size, newType string) string {

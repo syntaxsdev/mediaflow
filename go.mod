@@ -7,7 +7,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.30.2
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.2
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.85.1
-	github.com/disintegration/imaging v1.6.2
+	gopkg.in/h2non/bimg.v1 v1.1.9
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -25,7 +26,4 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.31.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.35.1 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
-	github.com/chai2010/webp v1.4.0 // indirect
-	golang.org/x/image v0.29.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
