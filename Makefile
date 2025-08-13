@@ -12,6 +12,9 @@ run-air:
 	@echo "Starting server with air 🚀"
 	@set -a && . ./.env && air
 
+run-air-local:
+	@echo "Starting server with air 🚀"
+	@set -a && . ./.env.local && air
 
 build:
 	@echo "Building server 🔨"
