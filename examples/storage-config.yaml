@@ -30,3 +30,62 @@ storage_options:
     default_size: "256"
     quality: 90
     convert_to: "webp"
+
+
+upload_options:
+  avatar:
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
+    size_max_bytes: 5242880  # 5MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900  # 15 minutes
+    path_template: "raw/{shard?}/{key_base}.{ext}"
+    enable_sharding: true
+  
+  photo:
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
+    size_max_bytes: 20971520  # 20MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900
+    path_template: "raw/{shard?}/{key_base}.{ext}"
+    enable_sharding: true
+  
+  video:
+    kind: "video"
+    allowed_mimes: ["video/mp4", "video/quicktime", "video/webm"]
+    size_max_bytes: 104857600  # 100MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 1800  # 30 minutes
+    path_template: "raw/{shard?}/{key_base}.{ext}"
+    enable_sharding: true
+
+  default:
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png"]
+    size_max_bytes: 10485760  # 10MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900
+    path_template: "raw/{shard?}/{key_base}.{ext}"
+    enable_sharding: true
+
+videos:
+  product:
+    origin_folder: "originals/videos/products"
+    constraints:
+      max_fps: 30
+      max_size_mb: 500
+    proxy:
+      enabled: true
+      folder: "proxies/videos/products"
+      height: 240
+      preview_seconds: 4
+    posters:
+      folder: "posters/videos"
+      time_percent: 10
+      format: "jpg"
+      quality: 90

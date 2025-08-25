@@ -197,7 +197,7 @@ func DetermineMimeType(file multipart.File) (string, error) {
 	}
 
 	// Reset the file pointer to the beginning
-	file.Seek(0, io.SeekStart)
+	_, _ = file.Seek(0, io.SeekStart)
 
 	contentType := http.DetectContentType(buf[:n])
 	return contentType, nil

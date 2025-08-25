@@ -32,4 +32,4 @@ go.work.sum
 # .vscode/
 
 tmp/*
-mediaflow
+mediaflow.env.local

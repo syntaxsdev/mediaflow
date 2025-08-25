@@ -17,13 +17,13 @@ type JSONResponse struct {
 
 func (r *JSONResponse) Write(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(r)
+	_ = json.NewEncoder(w).Encode(r)
 }
 
 func (r *JSONResponse) WriteError(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(r)
+	_ = json.NewEncoder(w).Encode(r)
 }
 
 type PlainResponse struct {
@@ -32,13 +32,13 @@ type PlainResponse struct {
 
 func (r *PlainResponse) Write(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte(r.Message))
+	_, _ = w.Write([]byte(r.Message))
 }
 
 func (r *PlainResponse) WriteError(w http.ResponseWriter, status int) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(status)
-	w.Write([]byte(r.Message))
+	_, _ = w.Write([]byte(r.Message))
 }
 
 func NewJSONResponse(message string) ResponseWriter {

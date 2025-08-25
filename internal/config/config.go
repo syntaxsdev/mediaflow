@@ -18,6 +18,8 @@ type Config struct {
 	AWSAccessKey string
 	AWSSecretKey string
 	CacheMaxAge  string
+	// API authentication
+	APIKey       string
 }
 
 func Load() *Config {
@@ -29,6 +31,8 @@ func Load() *Config {
 		AWSAccessKey: getEnv("AWS_ACCESS_KEY_ID", ""),
 		AWSSecretKey: getEnv("AWS_SECRET_ACCESS_KEY", ""),
 		CacheMaxAge:  getEnv("CACHE_MAX_AGE", "86400"),
+		// API authentication
+		APIKey:       getEnv("API_KEY", ""),
 	}
 }
 
@@ -44,6 +48,18 @@ type StorageOptions struct {
 
 type StorageConfig struct {
 	StorageOptions map[string]StorageOptions `yaml:"storage_options"`
+	UploadOptions  map[string]UploadOptions  `yaml:"upload_options,omitempty"`
+}
+
+type UploadOptions struct {
+	Kind            string   `yaml:"kind"`
+	AllowedMimes    []string `yaml:"allowed_mimes"`
+	SizeMaxBytes    int64    `yaml:"size_max_bytes"`
+	MultipartThresholdMB int64 `yaml:"multipart_threshold_mb"`
+	PartSizeMB      int64    `yaml:"part_size_mb"`
+	TokenTTLSeconds int64    `yaml:"token_ttl_seconds"`
+	PathTemplate    string   `yaml:"path_template"`
+	EnableSharding  bool     `yaml:"enable_sharding"`
 }
 
 func LoadStorageConfig(s3 *s3.Client, config *Config) (*StorageConfig, error) {
@@ -95,6 +111,20 @@ func (sc *StorageConfig) GetStorageOptions(imageType string) *StorageOptions {
 
 	// Fallback to hardcoded default
 	return DefaultStorageOptions()
+}
+
+func (sc *StorageConfig) GetUploadOptions(profile string) *UploadOptions {
+	if options, exists := sc.UploadOptions[profile]; exists {
+		return &options
+	}
+
+	// Return default if type not found
+	if defaultOptions, exists := sc.UploadOptions["default"]; exists {
+		return &defaultOptions
+	}
+
+	// Return nil if no upload options configured
+	return nil
 }
 
 func DefaultStorageOptions() *StorageOptions {

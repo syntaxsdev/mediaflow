@@ -59,6 +59,24 @@ run-image:
 	@echo "Running image 🚀"
 	@set -a && . ./.env && docker run -p 8080:8080 --replace -n mediaflow-server --rm $(IMAGE_FULL_NAME)
 
+test:
+	@echo "Running tests 🧪"
+	@go test -v ./internal/...
+
+test-coverage:
+	@echo "Running tests with coverage 📊"
+	@go test -v -coverprofile=coverage.out ./internal/...
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
+test-upload:
+	@echo "Running upload module tests 🔄"
+	@go test -v ./internal/upload
+
+test-auth:
+	@echo "Running auth module tests 🔐"
+	@go test -v ./internal/auth
+
 clean:
 	@echo "Cleaning up 🧹"
-	@rm -f mediaflow
+	@rm -f mediaflow coverage.out coverage.html

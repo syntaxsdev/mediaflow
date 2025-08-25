@@ -6,6 +6,7 @@ import (
 	"io"
 	utils "mediaflow/internal"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -14,8 +15,9 @@ import (
 )
 
 type Client struct {
-	s3Client *s3.Client
-	bucket   string
+	s3Client   *s3.Client
+	bucket     string
+	presigner  *s3.PresignClient
 }
 
 func NewClient(ctx context.Context, region, bucket, accessKey, secretKey, endpoint string) (*Client, error) {
@@ -44,9 +46,12 @@ func NewClient(ctx context.Context, region, bucket, accessKey, secretKey, endpoi
 		}
 	})
 
+	presigner := s3.NewPresignClient(s3Client)
+
 	return &Client{
-		s3Client: s3Client,
-		bucket:   bucket,
+		s3Client:  s3Client,
+		bucket:    bucket,
+		presigner: presigner,
 	}, nil
 }
 
@@ -71,3 +76,69 @@ func (c *Client) PutObject(ctx context.Context, key string, body io.Reader) erro
 	})
 	return err
 }
+
+// PresignPutObject generates a presigned URL for PUT operations
+func (c *Client) PresignPutObject(ctx context.Context, key string, expires time.Duration, headers map[string]string) (string, error) {
+	input := &s3.PutObjectInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(key),
+	}
+
+	// Add required headers to the input
+	if contentType, ok := headers["Content-Type"]; ok {
+		input.ContentType = aws.String(contentType)
+	}
+	// Note: SSE removed for MinIO compatibility
+
+	request, err := c.presigner.PresignPutObject(ctx, input, func(opts *s3.PresignOptions) {
+		opts.Expires = expires
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return request.URL, nil
+}
+
+// CreateMultipartUpload creates a multipart upload and returns the upload ID
+func (c *Client) CreateMultipartUpload(ctx context.Context, key string, headers map[string]string) (string, error) {
+	input := &s3.CreateMultipartUploadInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(key),
+	}
+
+	// Add required headers
+	if contentType, ok := headers["Content-Type"]; ok {
+		input.ContentType = aws.String(contentType)
+	}
+	// Note: SSE removed for MinIO compatibility
+
+	result, err := c.s3Client.CreateMultipartUpload(ctx, input)
+	if err != nil {
+		return "", err
+	}
+
+	return *result.UploadId, nil
+}
+
+// PresignUploadPart generates a presigned URL for uploading a part
+func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error) {
+	input := &s3.UploadPartInput{
+		Bucket:     aws.String(c.bucket),
+		Key:        aws.String(key),
+		UploadId:   aws.String(uploadID),
+		PartNumber: aws.Int32(partNumber),
+	}
+
+	request, err := c.presigner.PresignUploadPart(ctx, input, func(opts *s3.PresignOptions) {
+		opts.Expires = expires
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return request.URL, nil
+}
+
+// Note: AWS SDK doesn't support presigning CompleteMultipartUpload and AbortMultipartUpload
+// These operations must be done server-side or using direct API calls
