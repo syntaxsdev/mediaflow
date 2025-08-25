@@ -11,7 +11,7 @@ func TestAPIKeyMiddleware(t *testing.T) {
 	// Create a test handler that returns "OK" if auth passes
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	tests := []struct {
@@ -148,7 +148,7 @@ func TestAPIKeyMiddleware_ContentType(t *testing.T) {
 	config := &Config{APIKey: "test-key"}
 	middleware := APIKeyMiddleware(config)
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 	handler := middleware(testHandler)
 

@@ -60,5 +60,5 @@ func writeUnauthorized(w http.ResponseWriter) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	json.NewEncoder(w).Encode(errorResp)
+	_ = json.NewEncoder(w).Encode(errorResp)
 }

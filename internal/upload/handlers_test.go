@@ -92,7 +92,7 @@ func (h *TestHandler) HandlePresign(w http.ResponseWriter, r *http.Request) {
 	// Return presigned response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(presignResp)
+	_ = json.NewEncoder(w).Encode(presignResp)
 }
 
 func (h *TestHandler) writeError(w http.ResponseWriter, statusCode int, code, message, hint string) {
@@ -104,7 +104,7 @@ func (h *TestHandler) writeError(w http.ResponseWriter, statusCode int, code, me
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(errorResp)
+	_ = json.NewEncoder(w).Encode(errorResp)
 }
 
 // UploadService interface for dependency injection

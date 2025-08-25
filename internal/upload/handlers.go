@@ -96,7 +96,7 @@ func (h *Handler) HandlePresign(w http.ResponseWriter, r *http.Request) {
 	// Return presigned response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(presignResp)
+	_ = json.NewEncoder(w).Encode(presignResp)
 }
 
 // Note: Part presigning is now handled via batch presigning in the main endpoint
@@ -112,5 +112,5 @@ func (h *Handler) writeError(w http.ResponseWriter, statusCode int, code, messag
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(errorResp)
+	_ = json.NewEncoder(w).Encode(errorResp)
 }

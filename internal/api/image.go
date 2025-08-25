@@ -95,7 +95,7 @@ func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, i
 		w.Header().Set("Content-Type", "image/"+so.ConvertTo)
 		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", cd))
 		w.Header().Set("ETag", fmt.Sprintf(`"%s/%s_%s"`, thumbType, baseName, size))
-		w.Write(imageData)
+		w.Write(imageData) //nolint:errcheck
 	}
 }
 
@@ -115,7 +115,7 @@ func (h *ImageAPI) HandleOriginals(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/"+so.ConvertTo)
 		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", so.CacheDuration))
 		w.Header().Set("ETag", fmt.Sprintf(`"%s/%s"`, thumbType, baseName))
-		w.Write(imageData)
+		w.Write(imageData) //nolint:errcheck
 	}
 
 }

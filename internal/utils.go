@@ -20,7 +20,7 @@ func GracefulExit(reason string) {
 	fmt.Printf("🚨 %s", reason)
 	process, err := os.FindProcess(os.Getpid())
 	if err == nil {
-		process.Signal(syscall.SIGTERM)
+		_ = process.Signal(syscall.SIGTERM)
 	}
 }
 
