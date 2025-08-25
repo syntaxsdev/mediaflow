@@ -12,6 +12,7 @@ import (
 
 	utils "mediaflow/internal"
 	"mediaflow/internal/api"
+	"mediaflow/internal/auth"
 	"mediaflow/internal/config"
 	"mediaflow/internal/response"
 	"mediaflow/internal/service"
@@ -33,14 +34,18 @@ func main() {
 	uploadService := upload.NewService(imageService.S3Client, cfg)
 	uploadHandler := upload.NewHandler(ctx, uploadService, storageConfig)
 
+	// Setup authentication middleware
+	authConfig := &auth.Config{APIKey: cfg.APIKey}
+	authMiddleware := auth.APIKeyMiddleware(authConfig)
+
 	mux := http.NewServeMux()
 
-	// Image APIs
+	// Image APIs (no auth required)
 	mux.HandleFunc("/thumb/{type}/{image_id}", imageAPI.HandleThumbnailTypes)
 	mux.HandleFunc("/originals/{type}/{image_id}", imageAPI.HandleOriginals)
 	
-	// Upload APIs
-	mux.HandleFunc("/v1/uploads/presign", uploadHandler.HandlePresign)
+	// Upload APIs (auth required)
+	mux.Handle("/v1/uploads/presign", authMiddleware(http.HandlerFunc(uploadHandler.HandlePresign)))
 	
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
