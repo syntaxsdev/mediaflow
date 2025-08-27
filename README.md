@@ -40,6 +40,58 @@ Generates presigned URLs for secure direct-to-S3 uploads.
 }
 ```
 
+**Response for Single Upload:**
+```json
+{
+  "object_key": "raw/ab/unique-file-id.jpg",
+  "upload": {
+    "single": {
+      "method": "PUT",
+      "url": "https://presigned-s3-url",
+      "headers": {
+        "Content-Type": "image/jpeg",
+        "If-None-Match": "*"
+      },
+      "expires_at": "2024-01-01T12:00:00Z"
+    }
+  }
+}
+```
+
+**Response for Multipart Upload:**
+```json
+{
+  "object_key": "raw/ab/unique-file-id.jpg",
+  "upload": {
+    "multipart": {
+      "upload_id": "abc123xyz",
+      "part_size": 8388608,
+      "parts": [
+        {
+          "part_number": 1,
+          "method": "PUT",
+          "url": "https://presigned-s3-part-url-1",
+          "headers": {"Content-Type": "image/jpeg"},
+          "expires_at": "2024-01-01T12:00:00Z"
+        }
+      ],
+      "complete": {
+        "method": "POST",
+        "url": "https://your-api/v1/uploads/raw%2Fab%2Funique-file-id.jpg/complete/abc123xyz",
+        "headers": {"Content-Type": "application/json"},
+        "expires_at": "2024-01-01T12:00:00Z"
+      },
+      "abort": {
+        "method": "DELETE", 
+        "url": "https://your-api/v1/uploads/raw%2Fab%2Funique-file-id.jpg/abort/abc123xyz",
+        "headers": {},
+        "expires_at": "2024-01-01T12:00:00Z"
+      }
+    }
+  }
+}
+```
+
 **Parameters:**
 - `key_base`: Unique identifier for the file
 - `ext`: File extension (optional, for backward compatibility)
@@ -49,16 +101,66 @@ Generates presigned URLs for secure direct-to-S3 uploads.
 - `profile`: Configuration profile to use (`avatar`, `photo`, `video`, etc.)
 - `multipart`: Upload strategy (`auto`, `force`, or `off`)
 
+### Multipart Upload Completion
+```
+POST /v1/uploads/{object_key}/complete/{upload_id}
+```
+Completes a multipart upload by providing the ETags for all uploaded parts.
+
+**Request Body:**
+```json
+{
+  "parts": [
+    {
+      "part_number": 1,
+      "etag": "\"d41d8cd98f00b204e9800998ecf8427e\""
+    },
+    {
+      "part_number": 2,
+      "etag": "\"098f6bcd4621d373cade4e832627b4f6\""
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "status": "completed",
+  "object_key": "raw/ab/unique-file-id.jpg"
+}
+```
+
+### Multipart Upload Abort
+```
+DELETE /v1/uploads/{object_key}/abort/{upload_id}
+```
+Aborts a multipart upload and cleans up any uploaded parts.
+
+**Response:**
+```json
+{
+  "status": "aborted",
+  "upload_id": "abc123xyz"
+}
+```
+
 ### Thumbnails
 ```
 GET /thumb/{type}/{image_id}?width=512
+POST /thumb/{type}/{image_id}
 ```
-Generates and serves thumbnails with configurable dimensions.
+Generates and serves thumbnails with configurable dimensions. POST requests require authentication.
 
-**Parameters:**
+**GET Parameters:**
 - `type`: Image category (avatar, photo, banner, or any configured type)
 - `image_id`: Unique identifier for the image
 - `width`: Image width in pixels (optional, defaults to the type's `default_size` from storage config)
+
+**POST Parameters:**
+- Requires authentication (API key)
+- Request body should contain the image data
+- Used for uploading images to be processed
 
 ### Original Images
 ```
