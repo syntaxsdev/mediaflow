@@ -91,6 +91,17 @@ type ErrorResponse struct {
 	RetryAfterSeconds int    `json:"retry_after_seconds,omitempty"`
 }
 
+// CompleteMultipartRequest represents the request to complete a multipart upload
+type CompleteMultipartRequest struct {
+	Parts []CompletedPart `json:"parts" validate:"required,min=1"`
+}
+
+// CompletedPart represents a completed part with its ETag
+type CompletedPart struct {
+	PartNumber int    `json:"part_number" validate:"required,min=1"`
+	ETag       string `json:"etag" validate:"required"`
+}
+
 // Standard error codes
 const (
 	ErrUnauthorized      = "unauthorized"
