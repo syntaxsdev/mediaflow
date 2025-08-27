@@ -24,35 +24,35 @@ func NewService(s3Client S3Client, config *config.Config) *Service {
 }
 
 // PresignUpload generates presigned URLs for upload based on the request
-func (s *Service) PresignUpload(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error) {
+func (s *Service) PresignUpload(ctx context.Context, req *PresignRequest, profile *config.Profile) (*PresignResponse, error) {
 	// Validate MIME type
-	if !s.isMimeAllowed(req.Mime, uploadOptions.AllowedMimes) {
+	if !s.isMimeAllowed(req.Mime, profile.AllowedMimes) {
 		return nil, fmt.Errorf("mime type not allowed: %s", req.Mime)
 	}
 
 	// Validate file size
-	if req.SizeBytes > uploadOptions.SizeMaxBytes {
-		return nil, fmt.Errorf("file size exceeds maximum: %d > %d", req.SizeBytes, uploadOptions.SizeMaxBytes)
+	if req.SizeBytes > profile.SizeMaxBytes {
+		return nil, fmt.Errorf("file size exceeds maximum: %d > %d", req.SizeBytes, profile.SizeMaxBytes)
 	}
 
 	// Generate shard if not provided and sharding is enabled
 	shard := req.Shard
-	if shard == "" && uploadOptions.EnableSharding {
+	if shard == "" && profile.EnableSharding {
 		shard = GenerateShard(req.KeyBase)
 	}
 
 	// Build object key from template
-	objectKey := s.buildObjectKey(uploadOptions.PathTemplate, req.KeyBase, req.Ext, shard)
+	objectKey := s.buildObjectKey(profile.PathTemplate, req.KeyBase, req.Ext, shard)
 
 	// Determine upload strategy
-	strategy := s.determineStrategy(req.Multipart, req.SizeBytes, uploadOptions.MultipartThresholdMB)
+	strategy := s.determineStrategy(req.Multipart, req.SizeBytes, profile.MultipartThresholdMB)
 
 	// Create required headers
 	headers := s.buildRequiredHeaders(req.Mime)
 
 	// Create presigned URLs based on strategy
-	expiresAt := time.Now().Add(time.Duration(uploadOptions.TokenTTLSeconds) * time.Second)
-	uploadDetails, err := s.createUploadDetails(ctx, strategy, objectKey, headers, expiresAt, uploadOptions.PartSizeMB, req.SizeBytes)
+	expiresAt := time.Now().Add(time.Duration(profile.TokenTTLSeconds) * time.Second)
+	uploadDetails, err := s.createUploadDetails(ctx, strategy, objectKey, headers, expiresAt, profile.PartSizeMB, req.SizeBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upload details: %w", err)
 	}

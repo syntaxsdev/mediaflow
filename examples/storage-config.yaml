@@ -1,5 +1,16 @@
-storage_options:
+profiles:
   avatar:
+    # Upload configuration
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
+    size_max_bytes: 5242880  # 5MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900  # 15 minutes
+    path_template: "raw/{shard?}/{key_base}"
+    enable_sharding: true
+    
+    # Processing configuration
     origin_folder: "originals/avatars"
     thumb_folder: "thumbnails/avatars"
     sizes: ["128", "256"]
@@ -8,6 +19,17 @@ storage_options:
     convert_to: "webp"
   
   photo:
+    # Upload configuration
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
+    size_max_bytes: 20971520  # 20MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900
+    path_template: "raw/{shard?}/{key_base}"
+    enable_sharding: true
+    
+    # Processing configuration
     origin_folder: "originals/photos"
     thumb_folder: "thumbnails/photos"
     sizes: ["256", "512", "1024"]
@@ -16,6 +38,17 @@ storage_options:
     convert_to: "webp"
   
   banner:
+    # Upload configuration
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
+    size_max_bytes: 10485760  # 10MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900
+    path_template: "raw/{shard?}/{key_base}"
+    enable_sharding: true
+    
+    # Processing configuration
     origin_folder: "originals/banners"
     thumb_folder: "thumbnails/banners"
     sizes: ["512", "1024", "2048"]
@@ -23,7 +56,35 @@ storage_options:
     quality: 95
     convert_to: "webp"
   
+  video:
+    # Upload configuration
+    kind: "video"
+    allowed_mimes: ["video/mp4", "video/quicktime", "video/webm"]
+    size_max_bytes: 104857600  # 100MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 1800  # 30 minutes
+    path_template: "raw/{shard?}/{key_base}"
+    enable_sharding: true
+    
+    # Processing configuration (future implementation)
+    origin_folder: "originals/videos"
+    proxy_folder: "proxies/videos"
+    formats: ["mp4", "webm"]
+    quality: 80
+
   default:
+    # Upload configuration
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png"]
+    size_max_bytes: 10485760  # 10MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900
+    path_template: "raw/{shard?}/{key_base}"
+    enable_sharding: true
+    
+    # Processing configuration
     origin_folder: "originals"
     thumb_folder: "thumbnails"
     sizes: ["256", "512"]
@@ -31,61 +92,3 @@ storage_options:
     quality: 90
     convert_to: "webp"
 
-
-upload_options:
-  avatar:
-    kind: "image"
-    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
-    size_max_bytes: 5242880  # 5MB
-    multipart_threshold_mb: 15
-    part_size_mb: 8
-    token_ttl_seconds: 900  # 15 minutes
-    path_template: "raw/{shard?}/{key_base}.{ext}"
-    enable_sharding: true
-  
-  photo:
-    kind: "image"
-    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
-    size_max_bytes: 20971520  # 20MB
-    multipart_threshold_mb: 15
-    part_size_mb: 8
-    token_ttl_seconds: 900
-    path_template: "raw/{shard?}/{key_base}.{ext}"
-    enable_sharding: true
-  
-  video:
-    kind: "video"
-    allowed_mimes: ["video/mp4", "video/quicktime", "video/webm"]
-    size_max_bytes: 104857600  # 100MB
-    multipart_threshold_mb: 15
-    part_size_mb: 8
-    token_ttl_seconds: 1800  # 30 minutes
-    path_template: "raw/{shard?}/{key_base}.{ext}"
-    enable_sharding: true
-
-  default:
-    kind: "image"
-    allowed_mimes: ["image/jpeg", "image/png"]
-    size_max_bytes: 10485760  # 10MB
-    multipart_threshold_mb: 15
-    part_size_mb: 8
-    token_ttl_seconds: 900
-    path_template: "raw/{shard?}/{key_base}.{ext}"
-    enable_sharding: true
-
-videos:
-  product:
-    origin_folder: "originals/videos/products"
-    constraints:
-      max_fps: 30
-      max_size_mb: 500
-    proxy:
-      enabled: true
-      folder: "proxies/videos/products"
-      height: 240
-      preview_seconds: 4
-    posters:
-      folder: "posters/videos"
-      time_percent: 10
-      format: "jpg"
-      quality: 90

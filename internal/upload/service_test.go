@@ -252,7 +252,8 @@ func TestService_PresignUpload_Validation(t *testing.T) {
 	cfg := &config.Config{S3Bucket: "test-bucket"}
 	service := NewService(mockS3, cfg)
 
-	uploadOptions := &config.UploadOptions{
+	profile := &config.Profile{
+		Kind:                 "image",
 		AllowedMimes:         []string{"image/jpeg", "image/png"},
 		SizeMaxBytes:         5 * 1024 * 1024, // 5MB
 		MultipartThresholdMB: 15,
@@ -314,7 +315,7 @@ func TestService_PresignUpload_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			result, err := service.PresignUpload(ctx, tt.request, uploadOptions)
+			result, err := service.PresignUpload(ctx, tt.request, profile)
 
 			if tt.expectError {
 				if err == nil {
@@ -351,7 +352,8 @@ func TestService_PresignUpload_SingleStrategy(t *testing.T) {
 	cfg := &config.Config{S3Bucket: "test-bucket"}
 	service := NewService(mockS3, cfg)
 
-	uploadOptions := &config.UploadOptions{
+	profile := &config.Profile{
+		Kind:                 "image",
 		AllowedMimes:         []string{"image/jpeg"},
 		SizeMaxBytes:         5 * 1024 * 1024,
 		MultipartThresholdMB: 15,
@@ -372,7 +374,7 @@ func TestService_PresignUpload_SingleStrategy(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := service.PresignUpload(ctx, request, uploadOptions)
+	result, err := service.PresignUpload(ctx, request, profile)
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -407,7 +409,8 @@ func TestService_PresignUpload_MultipartStrategy(t *testing.T) {
 	cfg := &config.Config{S3Bucket: "test-bucket"}
 	service := NewService(mockS3, cfg)
 
-	uploadOptions := &config.UploadOptions{
+	profile := &config.Profile{
+		Kind:                 "video",
 		AllowedMimes:         []string{"video/mp4"},
 		SizeMaxBytes:         100 * 1024 * 1024,
 		MultipartThresholdMB: 15,
@@ -428,7 +431,7 @@ func TestService_PresignUpload_MultipartStrategy(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := service.PresignUpload(ctx, request, uploadOptions)
+	result, err := service.PresignUpload(ctx, request, profile)
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)

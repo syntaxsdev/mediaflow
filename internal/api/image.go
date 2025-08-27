@@ -65,10 +65,10 @@ func (h *ImageAPI) HandleThumbnailTypes(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, imageData []byte, thumbType, imagePath string) {
-	so := h.storageConfig.GetStorageOptions(thumbType)
+	profile := h.storageConfig.GetProfile(thumbType)
 	baseName := utils.BaseName(imagePath)
 	if r.Method == http.MethodPost {
-		err := h.imageService.UploadImage(h.ctx, so, imageData, thumbType, baseName)
+		err := h.imageService.UploadImage(h.ctx, profile, imageData, thumbType, baseName)
 		if err != nil {
 			response.JSON(err.Error()).WriteError(w, http.StatusInternalServerError)
 			return
@@ -81,18 +81,18 @@ func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, i
 			response.JSON(err.Error()).WriteError(w, http.StatusBadRequest)
 			return
 		}
-		imageData, err := h.imageService.GetImage(h.ctx, so, false, baseName, size)
+		imageData, err := h.imageService.GetImage(h.ctx, profile, false, baseName, size)
 		if err != nil {
 			response.JSON(err.Error()).WriteError(w, http.StatusInternalServerError)
 			return
 		}
-		cd := so.CacheDuration
+		cd := profile.CacheDuration
 		if cd == 0 {
 			// 24 hours
 			cd = 86400
 		}
 
-		w.Header().Set("Content-Type", "image/"+so.ConvertTo)
+		w.Header().Set("Content-Type", "image/"+profile.ConvertTo)
 		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", cd))
 		w.Header().Set("ETag", fmt.Sprintf(`"%s/%s_%s"`, thumbType, baseName, size))
 		w.Write(imageData) //nolint:errcheck
@@ -105,15 +105,15 @@ func (h *ImageAPI) HandleOriginals(w http.ResponseWriter, r *http.Request) {
 	fileName := parts[1]
 	baseName := utils.BaseName(fileName)
 
-	so := h.storageConfig.GetStorageOptions(thumbType)
+	profile := h.storageConfig.GetProfile(thumbType)
 	if r.Method == http.MethodGet {
-		imageData, err := h.imageService.GetImage(h.ctx, so, true, baseName, "")
+		imageData, err := h.imageService.GetImage(h.ctx, profile, true, baseName, "")
 		if err != nil {
 			response.JSON(err.Error()).WriteError(w, http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "image/"+so.ConvertTo)
-		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", so.CacheDuration))
+		w.Header().Set("Content-Type", "image/"+profile.ConvertTo)
+		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", profile.CacheDuration))
 		w.Header().Set("ETag", fmt.Sprintf(`"%s/%s"`, thumbType, baseName))
 		w.Write(imageData) //nolint:errcheck
 	}

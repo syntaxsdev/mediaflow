@@ -22,7 +22,7 @@ func TestUploadIntegration_WithAuth(t *testing.T) {
 	}
 	
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind:                 "image",
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
@@ -38,7 +38,7 @@ func TestUploadIntegration_WithAuth(t *testing.T) {
 
 	// Create a mock upload service
 	mockService := &MockUploadService{
-		presignUploadFunc: func(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error) {
+		presignUploadFunc: func(ctx context.Context, req *PresignRequest, profile *config.Profile) (*PresignResponse, error) {
 			return &PresignResponse{
 				ObjectKey: "raw/ab/test-key.jpg",
 				Upload: &UploadDetails{
@@ -191,7 +191,7 @@ func TestUploadIntegration_ValidationFlow(t *testing.T) {
 	}
 	
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind:                 "image",
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
@@ -346,7 +346,7 @@ func TestUploadIntegration_MultipartStrategy(t *testing.T) {
 	}
 	
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"video": {
 				Kind:                 "video",
 				AllowedMimes:         []string{"video/mp4"},

@@ -41,9 +41,9 @@ func NewImageService(cfg *config.Config) *ImageService {
 	}
 }
 
-func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOptions, imageData []byte, thumbType, imagePath string) error {
-	orig_path := fmt.Sprintf("%s/%s", so.OriginFolder, imagePath)
-	convertType := so.ConvertTo
+func (s *ImageService) UploadImage(ctx context.Context, profile *config.Profile, imageData []byte, thumbType, imagePath string) error {
+	orig_path := fmt.Sprintf("%s/%s", profile.OriginFolder, imagePath)
+	convertType := profile.ConvertTo
 	
 	// Upload original image in parallel with thumbnail generation
 	origUploadChan := make(chan error, 1)
@@ -64,11 +64,11 @@ func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOption
 		err     error
 	}
 	
-	thumbJobs := make(chan thumbnailJob, len(so.Sizes))
-	uploadErrors := make(chan error, len(so.Sizes))
+	thumbJobs := make(chan thumbnailJob, len(profile.Sizes))
+	uploadErrors := make(chan error, len(profile.Sizes))
 	
 	// Generate thumbnails in parallel
-	for _, sizeStr := range so.Sizes {
+	for _, sizeStr := range profile.Sizes {
 		go func(size string) {
 			sizeInt, err := strconv.Atoi(size)
 			if err != nil {
@@ -76,14 +76,14 @@ func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOption
 				return
 			}
 
-			thumbnailData, err := s.generateThumbnail(imageData, sizeInt, so.Quality, convertType)
+			thumbnailData, err := s.generateThumbnail(imageData, sizeInt, profile.Quality, convertType)
 			if err != nil {
 				thumbJobs <- thumbnailJob{sizeStr: size, err: fmt.Errorf("failed to generate thumbnail for size %s: %w", size, err)}
 				return
 			}
 
 			thumbSizePath := s.createThumbnailPathForSize(imagePath, size, convertType)
-			thumbFullPath := fmt.Sprintf("%s/%s", so.ThumbFolder, thumbSizePath)
+			thumbFullPath := fmt.Sprintf("%s/%s", profile.ThumbFolder, thumbSizePath)
 			
 			thumbJobs <- thumbnailJob{
 				sizeStr: size,
@@ -95,7 +95,7 @@ func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOption
 	}
 
 	// Upload thumbnails in parallel as they're generated
-	for i := 0; i < len(so.Sizes); i++ {
+	for i := 0; i < len(profile.Sizes); i++ {
 		go func() {
 			job := <-thumbJobs
 			if job.err != nil {
@@ -118,7 +118,7 @@ func (s *ImageService) UploadImage(ctx context.Context, so *config.StorageOption
 	}
 
 	// Wait for all thumbnail uploads
-	for i := 0; i < len(so.Sizes); i++ {
+	for i := 0; i < len(profile.Sizes); i++ {
 		if err := <-uploadErrors; err != nil {
 			return err
 		}
@@ -165,19 +165,19 @@ func (s *ImageService) createThumbnailPathForSize(originalPath, size, newType st
 }
 
 // GetImage gets the image from the S3 bucket
-func (s *ImageService) GetImage(ctx context.Context, so *config.StorageOptions, original bool, baseImageName, size string) ([]byte, error) {
+func (s *ImageService) GetImage(ctx context.Context, profile *config.Profile, original bool, baseImageName, size string) ([]byte, error) {
 	var path string
 	if original {
-		path = fmt.Sprintf("%s/%s", so.OriginFolder, baseImageName)
+		path = fmt.Sprintf("%s/%s", profile.OriginFolder, baseImageName)
 	} else {
 		if size == "" && !original {
-			if so.DefaultSize == "" {
+			if profile.DefaultSize == "" {
 				return nil, fmt.Errorf("please specify a size, as `default_size` is not set for this configuration")
 			}
-			size = so.DefaultSize
+			size = profile.DefaultSize
 		}
 		// example -> folder/file_size.ext
-		path = fmt.Sprintf("%s/%s_%s.%s", so.ThumbFolder, baseImageName, size, so.ConvertTo)
+		path = fmt.Sprintf("%s/%s_%s.%s", profile.ThumbFolder, baseImageName, size, profile.ConvertTo)
 	}
 
 	imageData, err := s.S3Client.GetObject(ctx, path)

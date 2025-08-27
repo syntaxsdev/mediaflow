@@ -4,11 +4,13 @@ A lightweight Go service for processing and serving images with YAML-configurabl
 
 ## Features
 
+- **Presigned Uploads**: `/v1/uploads/presign` - secure direct-to-S3 uploads with validation
 - **Original Image Serving**: `/originals/{type}/{image_id}` - serve original images directly from storage
 - **Thumbnail Generation**: `/thumb/{type}/{image_id}` - on-demand thumbnail generation
-- **YAML Configuration**: Different processing rules per image type (avatar, photo, banner)
+- **Unified Configuration**: Profile-based YAML config combining upload and processing rules
 - **Multiple Formats**: Convert images to WebP, JPEG, PNG with configurable quality
-- **S3 Integration**: Fetch and store images in AWS S3 with folder organization
+- **Video Support**: Ready for video upload and processing (processing features coming soon)
+- **S3 Integration**: Direct S3 uploads with multipart support for large files
 - **CDN-Optimized**: Cache-Control and ETag headers for optimal CDN performance
 - **Graceful Shutdown**: Production-ready server lifecycle management
 
@@ -18,6 +20,34 @@ A lightweight Go service for processing and serving images with YAML-configurabl
 - Server level caching of high frequency media
 
 ## API Endpoints
+
+### Presigned Uploads
+```
+POST /v1/uploads/presign
+```
+Generates presigned URLs for secure direct-to-S3 uploads.
+
+**Request Body:**
+```json
+{
+  "key_base": "unique-file-id",
+  "ext": "jpg",
+  "mime": "image/jpeg",
+  "size_bytes": 1024000,
+  "kind": "image",
+  "profile": "avatar",
+  "multipart": "auto"
+}
+```
+
+**Parameters:**
+- `key_base`: Unique identifier for the file
+- `ext`: File extension (optional, for backward compatibility)
+- `mime`: MIME type of the file
+- `size_bytes`: File size in bytes
+- `kind`: Media type (`image` or `video`)
+- `profile`: Configuration profile to use (`avatar`, `photo`, `video`, etc.)
+- `multipart`: Upload strategy (`auto`, `force`, or `off`)
 
 ### Thumbnails
 ```
@@ -50,11 +80,22 @@ Returns service health status.
 
 ### Storage Configuration (storage-config.yaml)
 
-MediaFlow uses YAML configuration to define processing rules per image type:
+MediaFlow uses YAML configuration to define profiles that combine upload settings and processing rules:
 
 ```yaml
-storage_options:
+profiles:
   avatar:
+    # Upload configuration
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
+    size_max_bytes: 5242880  # 5MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900  # 15 minutes
+    path_template: "raw/{shard?}/{key_base}"
+    enable_sharding: true
+    
+    # Processing configuration
     origin_folder: "originals/avatars"
     thumb_folder: "thumbnails/avatars"
     sizes: ["128", "256"]
@@ -63,6 +104,15 @@ storage_options:
     convert_to: "webp"
   
   photo:
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
+    size_max_bytes: 20971520  # 20MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900
+    path_template: "raw/{shard?}/{key_base}"
+    enable_sharding: true
+    
     origin_folder: "originals/photos"
     thumb_folder: "thumbnails/photos"
     sizes: ["256", "512", "1024"]
@@ -70,15 +120,32 @@ storage_options:
     quality: 90
     convert_to: "webp"
   
-  banner:
-    origin_folder: "originals/banners"
-    thumb_folder: "thumbnails/banners"
-    sizes: ["512", "1024", "2048"]
-    default_size: "512"
-    quality: 95
-    convert_to: "webp"
-  
+  video:
+    kind: "video"
+    allowed_mimes: ["video/mp4", "video/quicktime", "video/webm"]
+    size_max_bytes: 104857600  # 100MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 1800  # 30 minutes
+    path_template: "raw/{shard?}/{key_base}"
+    enable_sharding: true
+    
+    origin_folder: "originals/videos"
+    thumb_folder: "posters/videos"  # Video thumbnails
+    proxy_folder: "proxies/videos"   # Compressed versions
+    formats: ["mp4", "webm"]
+    quality: 80
+
   default:
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png"]
+    size_max_bytes: 10485760  # 10MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900
+    path_template: "raw/{shard?}/{key_base}"
+    enable_sharding: true
+    
     origin_folder: "originals"
     thumb_folder: "thumbnails"
     sizes: ["256", "512"]

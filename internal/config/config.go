@@ -36,30 +36,36 @@ func Load() *Config {
 	}
 }
 
-type StorageOptions struct {
-	OriginFolder  string   `yaml:"origin_folder"`
-	ThumbFolder   string   `yaml:"thumb_folder"`
-	Sizes         []string `yaml:"sizes"`
-	DefaultSize   string   `yaml:"default_size"`
-	Quality       int      `yaml:"quality"`
-	ConvertTo     string   `yaml:"convert_to"`
-	CacheDuration int      `yaml:"cache_duration"` // in seconds
+// Profile combines upload and processing configuration
+type Profile struct {
+	// Upload configuration
+	Kind                 string   `yaml:"kind"`
+	AllowedMimes         []string `yaml:"allowed_mimes"`
+	SizeMaxBytes         int64    `yaml:"size_max_bytes"`
+	MultipartThresholdMB int64    `yaml:"multipart_threshold_mb"`
+	PartSizeMB           int64    `yaml:"part_size_mb"`
+	TokenTTLSeconds      int64    `yaml:"token_ttl_seconds"`
+	PathTemplate         string   `yaml:"path_template"`
+	EnableSharding       bool     `yaml:"enable_sharding"`
+	
+	// Processing configuration (shared)
+	OriginFolder  string   `yaml:"origin_folder,omitempty"`
+	ThumbFolder   string   `yaml:"thumb_folder,omitempty"`
+	Quality       int      `yaml:"quality,omitempty"`
+	CacheDuration int      `yaml:"cache_duration,omitempty"` // in seconds
+	
+	// Processing configuration (images)
+	Sizes       []string `yaml:"sizes,omitempty"`
+	DefaultSize string   `yaml:"default_size,omitempty"`
+	ConvertTo   string   `yaml:"convert_to,omitempty"`
+	
+	// Processing configuration (videos)
+	ProxyFolder string   `yaml:"proxy_folder,omitempty"`
+	Formats     []string `yaml:"formats,omitempty"`
 }
 
 type StorageConfig struct {
-	StorageOptions map[string]StorageOptions `yaml:"storage_options"`
-	UploadOptions  map[string]UploadOptions  `yaml:"upload_options,omitempty"`
-}
-
-type UploadOptions struct {
-	Kind            string   `yaml:"kind"`
-	AllowedMimes    []string `yaml:"allowed_mimes"`
-	SizeMaxBytes    int64    `yaml:"size_max_bytes"`
-	MultipartThresholdMB int64 `yaml:"multipart_threshold_mb"`
-	PartSizeMB      int64    `yaml:"part_size_mb"`
-	TokenTTLSeconds int64    `yaml:"token_ttl_seconds"`
-	PathTemplate    string   `yaml:"path_template"`
-	EnableSharding  bool     `yaml:"enable_sharding"`
+	Profiles map[string]Profile `yaml:"profiles"`
 }
 
 func LoadStorageConfig(s3 *s3.Client, config *Config) (*StorageConfig, error) {
@@ -99,42 +105,43 @@ func LoadStorageConfig(s3 *s3.Client, config *Config) (*StorageConfig, error) {
 	return &storageConfig, nil
 }
 
-func (sc *StorageConfig) GetStorageOptions(imageType string) *StorageOptions {
-	if options, exists := sc.StorageOptions[imageType]; exists {
-		return &options
+// GetProfile returns a profile by name
+func (sc *StorageConfig) GetProfile(profileName string) *Profile {
+	if profile, exists := sc.Profiles[profileName]; exists {
+		return &profile
 	}
 
-	// Return default if type not found
-	if defaultOptions, exists := sc.StorageOptions["default"]; exists {
-		return &defaultOptions
+	// Return default profile if explicitly requested and exists
+	if profileName == "default" {
+		if defaultProfile, exists := sc.Profiles["default"]; exists {
+			return &defaultProfile
+		}
+		// Fallback to hardcoded default
+		return DefaultProfile()
 	}
 
-	// Fallback to hardcoded default
-	return DefaultStorageOptions()
-}
-
-func (sc *StorageConfig) GetUploadOptions(profile string) *UploadOptions {
-	if options, exists := sc.UploadOptions[profile]; exists {
-		return &options
-	}
-
-	// Return default if type not found
-	if defaultOptions, exists := sc.UploadOptions["default"]; exists {
-		return &defaultOptions
-	}
-
-	// Return nil if no upload options configured
+	// Return nil for non-existent profiles
 	return nil
 }
 
-func DefaultStorageOptions() *StorageOptions {
-	return &StorageOptions{
-		OriginFolder: "originals",
-		ThumbFolder:  "thumbnails",
-		Sizes:        []string{"256", "512", "1024"},
-		Quality:      90,
+
+func DefaultProfile() *Profile {
+	return &Profile{
+		Kind:                 "image",
+		AllowedMimes:         []string{"image/jpeg", "image/png"},
+		SizeMaxBytes:         10485760, // 10MB
+		MultipartThresholdMB: 15,
+		PartSizeMB:          8,
+		TokenTTLSeconds:     900,
+		PathTemplate:        "raw/{shard?}/{key_base}",
+		EnableSharding:      true,
+		OriginFolder:        "originals",
+		ThumbFolder:         "thumbnails",
+		Sizes:               []string{"256", "512", "1024"},
+		Quality:             90,
 	}
 }
+
 
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

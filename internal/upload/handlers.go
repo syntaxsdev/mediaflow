@@ -63,27 +63,27 @@ func (h *Handler) HandlePresign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get upload options for the profile
-	uploadOptions := h.storageConfig.GetUploadOptions(req.Profile)
-	if uploadOptions == nil {
-		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("No upload configuration for profile: %s", req.Profile), "Configure upload_options in your storage config")
+	// Get profile configuration
+	profile := h.storageConfig.GetProfile(req.Profile)
+	if profile == nil {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("No configuration for profile: %s", req.Profile), "Configure profile in your storage config")
 		return
 	}
 
-	// Validate kind matches upload options
-	if uploadOptions.Kind != req.Kind {
-		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("Kind mismatch: expected %s, got %s", uploadOptions.Kind, req.Kind), "")
+	// Validate kind matches profile
+	if profile.Kind != req.Kind {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("Kind mismatch: expected %s, got %s", profile.Kind, req.Kind), "")
 		return
 	}
 
 	// Generate presigned upload
-	presignResp, err := h.uploadService.PresignUpload(h.ctx, &req, uploadOptions)
+	presignResp, err := h.uploadService.PresignUpload(h.ctx, &req, profile)
 	if err != nil {
 		if err.Error() == fmt.Sprintf("mime type not allowed: %s", req.Mime) {
 			h.writeError(w, http.StatusBadRequest, ErrMimeNotAllowed, err.Error(), "Check allowed_mimes in upload configuration")
 			return
 		}
-		if err.Error() == fmt.Sprintf("file size exceeds maximum: %d > %d", req.SizeBytes, uploadOptions.SizeMaxBytes) {
+		if err.Error() == fmt.Sprintf("file size exceeds maximum: %d > %d", req.SizeBytes, profile.SizeMaxBytes) {
 			h.writeError(w, http.StatusBadRequest, ErrSizeTooLarge, err.Error(), "Reduce file size or check size_max_bytes in configuration")
 			return
 		}

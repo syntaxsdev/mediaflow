@@ -60,21 +60,21 @@ func (h *TestHandler) HandlePresign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get upload options for the profile
-	uploadOptions := h.storageConfig.GetUploadOptions(req.Profile)
-	if uploadOptions == nil {
-		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("No upload configuration for profile: %s", req.Profile), "Configure upload_options in your storage config")
+	// Get profile configuration
+	profile := h.storageConfig.GetProfile(req.Profile)
+	if profile == nil {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("No configuration for profile: %s", req.Profile), "Configure profile in your storage config")
 		return
 	}
 
-	// Validate kind matches upload options
-	if uploadOptions.Kind != req.Kind {
-		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("Kind mismatch: expected %s, got %s", uploadOptions.Kind, req.Kind), "")
+	// Validate kind matches profile
+	if profile.Kind != req.Kind {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("Kind mismatch: expected %s, got %s", profile.Kind, req.Kind), "")
 		return
 	}
 
 	// Generate presigned upload
-	presignResp, err := h.uploadService.PresignUpload(h.ctx, &req, uploadOptions)
+	presignResp, err := h.uploadService.PresignUpload(h.ctx, &req, profile)
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "mime type not allowed:") {
@@ -109,17 +109,17 @@ func (h *TestHandler) writeError(w http.ResponseWriter, statusCode int, code, me
 
 // UploadService interface for dependency injection
 type UploadService interface {
-	PresignUpload(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error)
+	PresignUpload(ctx context.Context, req *PresignRequest, profile *config.Profile) (*PresignResponse, error)
 }
 
 // MockUploadService implements the upload service interface for testing
 type MockUploadService struct {
-	presignUploadFunc func(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error)
+	presignUploadFunc func(ctx context.Context, req *PresignRequest, profile *config.Profile) (*PresignResponse, error)
 }
 
-func (m *MockUploadService) PresignUpload(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error) {
+func (m *MockUploadService) PresignUpload(ctx context.Context, req *PresignRequest, profile *config.Profile) (*PresignResponse, error) {
 	if m.presignUploadFunc != nil {
-		return m.presignUploadFunc(ctx, req, uploadOptions)
+		return m.presignUploadFunc(ctx, req, profile)
 	}
 
 	// Default mock response
@@ -140,7 +140,7 @@ func TestHandler_HandlePresign_Success(t *testing.T) {
 	// Setup
 	mockService := &MockUploadService{}
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind:                 "image",
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
@@ -201,7 +201,7 @@ func TestHandler_HandlePresign_Success(t *testing.T) {
 func TestHandler_HandlePresign_ValidationErrors(t *testing.T) {
 	// Setup
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind:                 "image",
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
@@ -378,7 +378,7 @@ func TestHandler_HandlePresign_ValidationErrors(t *testing.T) {
 func TestHandler_HandlePresign_ServiceErrors(t *testing.T) {
 	// Setup
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind:                 "image",
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
@@ -421,7 +421,7 @@ func TestHandler_HandlePresign_ServiceErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := &MockUploadService{
-				presignUploadFunc: func(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error) {
+				presignUploadFunc: func(ctx context.Context, req *PresignRequest, profile *config.Profile) (*PresignResponse, error) {
 					return nil, tt.serviceError
 				},
 			}
@@ -467,7 +467,7 @@ func TestHandler_HandlePresign_ServiceErrors(t *testing.T) {
 
 func TestHandler_HandlePresign_InvalidJSON(t *testing.T) {
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind: "image",
 			},
