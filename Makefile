@@ -35,9 +35,8 @@ stop-buildx:
 
 build-image: setup-buildx
 	@echo "Building image for AMD64 and 386 🔨"
-	@docker buildx build --platform linux/amd64,linux/386 -t $(IMAGE_FULL_NAME) .
+	@docker buildx build --platform linux/amd64,linux/386 -t $(IMAGE_FULL_NAME) --load .
 	@echo "Image built successfully 🎉"
-	@echo "Note: Multi-platform images are not loaded locally. Use --push to push to registry."
 
 build-image-arm64: setup-buildx
 	@echo "Building image for ARM64 🔨"

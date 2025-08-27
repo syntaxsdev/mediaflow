@@ -45,11 +45,10 @@ type Profile struct {
 	MultipartThresholdMB int64    `yaml:"multipart_threshold_mb"`
 	PartSizeMB           int64    `yaml:"part_size_mb"`
 	TokenTTLSeconds      int64    `yaml:"token_ttl_seconds"`
-	PathTemplate         string   `yaml:"path_template"`
+	StoragePath          string   `yaml:"storage_path"`
 	EnableSharding       bool     `yaml:"enable_sharding"`
 	
 	// Processing configuration (shared)
-	OriginFolder  string   `yaml:"origin_folder,omitempty"`
 	ThumbFolder   string   `yaml:"thumb_folder,omitempty"`
 	Quality       int      `yaml:"quality,omitempty"`
 	CacheDuration int      `yaml:"cache_duration,omitempty"` // in seconds
@@ -133,9 +132,8 @@ func DefaultProfile() *Profile {
 		MultipartThresholdMB: 15,
 		PartSizeMB:          8,
 		TokenTTLSeconds:     900,
-		PathTemplate:        "raw/{shard?}/{key_base}",
+		StoragePath:         "originals/{shard?}/{key_base}",
 		EnableSharding:      true,
-		OriginFolder:        "originals",
 		ThumbFolder:         "thumbnails",
 		Sizes:               []string{"256", "512", "1024"},
 		Quality:             90,

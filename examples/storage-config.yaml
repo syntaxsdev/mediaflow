@@ -7,11 +7,10 @@ profiles:
     multipart_threshold_mb: 15
     part_size_mb: 8
     token_ttl_seconds: 900  # 15 minutes
-    path_template: "raw/{shard?}/{key_base}"
+    storage_path: "originals/avatars/{shard?}/{key_base}"
     enable_sharding: true
     
     # Processing configuration
-    origin_folder: "originals/avatars"
     thumb_folder: "thumbnails/avatars"
     sizes: ["128", "256"]
     default_size: "256"
@@ -26,11 +25,10 @@ profiles:
     multipart_threshold_mb: 15
     part_size_mb: 8
     token_ttl_seconds: 900
-    path_template: "raw/{shard?}/{key_base}"
+    storage_path: "originals/photos/{shard?}/{key_base}"
     enable_sharding: true
     
     # Processing configuration
-    origin_folder: "originals/photos"
     thumb_folder: "thumbnails/photos"
     sizes: ["256", "512", "1024"]
     default_size: "256"
@@ -45,11 +43,10 @@ profiles:
     multipart_threshold_mb: 15
     part_size_mb: 8
     token_ttl_seconds: 900
-    path_template: "raw/{shard?}/{key_base}"
+    storage_path: "originals/banners/{shard?}/{key_base}"
     enable_sharding: true
     
     # Processing configuration
-    origin_folder: "originals/banners"
     thumb_folder: "thumbnails/banners"
     sizes: ["512", "1024", "2048"]
     default_size: "512"
@@ -64,11 +61,10 @@ profiles:
     multipart_threshold_mb: 15
     part_size_mb: 8
     token_ttl_seconds: 1800  # 30 minutes
-    path_template: "raw/{shard?}/{key_base}"
+    storage_path: "originals/videos/{shard?}/{key_base}"
     enable_sharding: true
     
     # Processing configuration (future implementation)
-    origin_folder: "originals/videos"
     proxy_folder: "proxies/videos"
     formats: ["mp4", "webm"]
     quality: 80
@@ -81,11 +77,10 @@ profiles:
     multipart_threshold_mb: 15
     part_size_mb: 8
     token_ttl_seconds: 900
-    path_template: "raw/{shard?}/{key_base}"
+    storage_path: "originals/{shard?}/{key_base}"
     enable_sharding: true
     
     # Processing configuration
-    origin_folder: "originals"
     thumb_folder: "thumbnails"
     sizes: ["256", "512"]
     default_size: "256"

@@ -194,11 +194,10 @@ profiles:
     multipart_threshold_mb: 15
     part_size_mb: 8
     token_ttl_seconds: 900  # 15 minutes
-    path_template: "raw/{shard?}/{key_base}"
+    storage_path: "originals/avatars/{shard?}/{key_base}"
     enable_sharding: true
     
     # Processing configuration
-    origin_folder: "originals/avatars"
     thumb_folder: "thumbnails/avatars"
     sizes: ["128", "256"]
     default_size: "256"
@@ -212,10 +211,9 @@ profiles:
     multipart_threshold_mb: 15
     part_size_mb: 8
     token_ttl_seconds: 900
-    path_template: "raw/{shard?}/{key_base}"
+    storage_path: "originals/photos/{shard?}/{key_base}"
     enable_sharding: true
     
-    origin_folder: "originals/photos"
     thumb_folder: "thumbnails/photos"
     sizes: ["256", "512", "1024"]
     default_size: "256"
@@ -229,10 +227,9 @@ profiles:
     multipart_threshold_mb: 15
     part_size_mb: 8
     token_ttl_seconds: 1800  # 30 minutes
-    path_template: "raw/{shard?}/{key_base}"
+    storage_path: "originals/videos/{shard?}/{key_base}"
     enable_sharding: true
     
-    origin_folder: "originals/videos"
     thumb_folder: "posters/videos"  # Video thumbnails
     proxy_folder: "proxies/videos"   # Compressed versions
     formats: ["mp4", "webm"]
@@ -245,16 +242,46 @@ profiles:
     multipart_threshold_mb: 15
     part_size_mb: 8
     token_ttl_seconds: 900
-    path_template: "raw/{shard?}/{key_base}"
+    storage_path: "originals/{shard?}/{key_base}"
     enable_sharding: true
     
-    origin_folder: "originals"
     thumb_folder: "thumbnails"
     sizes: ["256", "512"]
     default_size: "256"
     quality: 90
     convert_to: "webp"
 ```
+
+### Configuration Fields
+
+#### Upload Configuration
+- `kind`: Media type (`image` or `video`)
+- `allowed_mimes`: Array of allowed MIME types
+- `size_max_bytes`: Maximum file size in bytes
+- `multipart_threshold_mb`: Size threshold for multipart uploads
+- `part_size_mb`: Size of each multipart chunk
+- `token_ttl_seconds`: Presigned URL expiration time
+- `storage_path`: Template for where files are stored in S3 (supports `{key_base}`, `{ext}`, `{shard}`, `{shard?}`)
+- `enable_sharding`: Whether to use sharding for load distribution
+
+#### Processing Configuration  
+- `thumb_folder`: Folder for storing thumbnails
+- `sizes`: Available thumbnail sizes
+- `default_size`: Default thumbnail size if none specified
+- `quality`: Image compression quality (1-100)
+- `convert_to`: Format to convert images to (`webp`, `jpeg`, etc.)
+
+#### Storage Path Templates
+The `storage_path` field uses a template system to define where files are stored:
+- `{key_base}`: The unique file identifier
+- `{ext}`: File extension
+- `{shard}`: Shard value (if sharding enabled)
+- `{shard?}`: Optional shard (removed if sharding disabled)
+
+Examples:
+- `"originals/{key_base}"` → `originals/my-file.jpg`
+- `"uploads/{shard?}/{key_base}"` → `uploads/ab/my-file.jpg` (with sharding)
+- `"users/{user_id}/{key_base}"` → Custom organization by user
 
 ### Environment Variables
 

@@ -41,8 +41,36 @@ func NewImageService(cfg *config.Config) *ImageService {
 	}
 }
 
+// buildStoragePath builds the storage path from template and filename
+// This derives the path where files are actually stored based on the upload template
+func (s *ImageService) buildStoragePath(template, filename string) string {
+	// Extract key_base and ext from filename
+	parts := strings.Split(filename, ".")
+	keyBase := parts[0]
+	ext := ""
+	if len(parts) > 1 {
+		ext = parts[len(parts)-1]
+	}
+	
+	// Simple template replacement for image retrieval
+	// For now, we'll assume no sharding in image retrieval since we don't have the original key_base
+	path := template
+	path = strings.ReplaceAll(path, "{key_base}", keyBase)
+	path = strings.ReplaceAll(path, "{ext}", ext)
+	
+	// Remove shard placeholders since we can't reconstruct them from filename alone
+	path = strings.ReplaceAll(path, "/{shard?}", "")
+	path = strings.ReplaceAll(path, "{shard?}/", "")
+	path = strings.ReplaceAll(path, "{shard?}", "")
+	path = strings.ReplaceAll(path, "/{shard}", "")
+	path = strings.ReplaceAll(path, "{shard}/", "")
+	path = strings.ReplaceAll(path, "{shard}", "")
+	
+	return path
+}
+
 func (s *ImageService) UploadImage(ctx context.Context, profile *config.Profile, imageData []byte, thumbType, imagePath string) error {
-	orig_path := fmt.Sprintf("%s/%s", profile.OriginFolder, imagePath)
+	orig_path := s.buildStoragePath(profile.StoragePath, imagePath)
 	convertType := profile.ConvertTo
 	
 	// Upload original image in parallel with thumbnail generation
@@ -168,7 +196,7 @@ func (s *ImageService) createThumbnailPathForSize(originalPath, size, newType st
 func (s *ImageService) GetImage(ctx context.Context, profile *config.Profile, original bool, baseImageName, size string) ([]byte, error) {
 	var path string
 	if original {
-		path = fmt.Sprintf("%s/%s", profile.OriginFolder, baseImageName)
+		path = s.buildStoragePath(profile.StoragePath, baseImageName)
 	} else {
 		if size == "" && !original {
 			if profile.DefaultSize == "" {

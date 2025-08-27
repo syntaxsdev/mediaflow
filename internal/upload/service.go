@@ -43,7 +43,7 @@ func (s *Service) PresignUpload(ctx context.Context, req *PresignRequest, profil
 	}
 
 	// Build object key from template
-	objectKey := s.buildObjectKey(profile.PathTemplate, req.KeyBase, req.Ext, shard)
+	objectKey := s.buildObjectKey(profile.StoragePath, req.KeyBase, req.Ext, shard)
 
 	// Determine upload strategy
 	strategy := s.determineStrategy(req.Multipart, req.SizeBytes, profile.MultipartThresholdMB)

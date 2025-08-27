@@ -78,7 +78,7 @@ type UploadConfig struct {
 	TokenTTLSeconds     int64           `yaml:"token_ttl_seconds"`
 	SigningAlgorithm    string          `yaml:"signing_alg"`
 	ActiveKeyID         string          `yaml:"active_kid"`
-	PathTemplateRaw     string          `yaml:"path_template_raw"`
+	StoragePathRaw      string          `yaml:"storage_path_raw"`
 	EnableSharding      bool            `yaml:"enable_sharding"`
 	Policies            []UploadPolicy  `yaml:"policies"`
 }

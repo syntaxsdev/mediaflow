@@ -2,17 +2,21 @@ package upload
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"mediaflow/internal/config"
+	"mediaflow/internal/s3"
 )
 
 // MockS3Client implements S3Client interface for testing
 type MockS3Client struct {
-	createMultipartUploadFunc func(ctx context.Context, key string, headers map[string]string) (string, error)
-	presignPutObjectFunc      func(ctx context.Context, key string, expires time.Duration, headers map[string]string) (string, error)
-	presignUploadPartFunc     func(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error)
+	createMultipartUploadFunc  func(ctx context.Context, key string, headers map[string]string) (string, error)
+	presignPutObjectFunc       func(ctx context.Context, key string, expires time.Duration, headers map[string]string) (string, error)
+	presignUploadPartFunc      func(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error)
+	completeMultipartUploadFunc func(ctx context.Context, key, uploadID string, parts []s3.PartInfo) error
+	abortMultipartUploadFunc   func(ctx context.Context, key, uploadID string) error
 }
 
 func (m *MockS3Client) CreateMultipartUpload(ctx context.Context, key string, headers map[string]string) (string, error) {
@@ -34,6 +38,20 @@ func (m *MockS3Client) PresignUploadPart(ctx context.Context, key, uploadID stri
 		return m.presignUploadPartFunc(ctx, key, uploadID, partNumber, expires)
 	}
 	return "https://test.s3.amazonaws.com/bucket/" + key + "?partNumber=" + string(rune(partNumber)), nil
+}
+
+func (m *MockS3Client) CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []s3.PartInfo) error {
+	if m.completeMultipartUploadFunc != nil {
+		return m.completeMultipartUploadFunc(ctx, key, uploadID, parts)
+	}
+	return nil
+}
+
+func (m *MockS3Client) AbortMultipartUpload(ctx context.Context, key, uploadID string) error {
+	if m.abortMultipartUploadFunc != nil {
+		return m.abortMultipartUploadFunc(ctx, key, uploadID)
+	}
+	return nil
 }
 
 func TestGenerateShard(t *testing.T) {
@@ -213,19 +231,19 @@ func TestService_buildObjectKey(t *testing.T) {
 	}{
 		{
 			name:     "With shard",
-			template: "raw/{shard?}/{key_base}.{ext}",
+			template: "originals/{shard?}/{key_base}.{ext}",
 			keyBase:  "test-key",
 			ext:      "jpg",
 			shard:    "ab",
-			expected: "raw/ab/test-key.jpg",
+			expected: "originals/ab/test-key.jpg",
 		},
 		{
 			name:     "Without shard",
-			template: "raw/{shard?}/{key_base}.{ext}",
+			template: "originals/{shard?}/{key_base}.{ext}",
 			keyBase:  "test-key",
 			ext:      "jpg",
 			shard:    "",
-			expected: "raw/test-key.jpg",
+			expected: "originals/test-key.jpg",
 		},
 		{
 			name:     "Simple template",
@@ -259,7 +277,7 @@ func TestService_PresignUpload_Validation(t *testing.T) {
 		MultipartThresholdMB: 15,
 		PartSizeMB:          8,
 		TokenTTLSeconds:     900,
-		PathTemplate:        "raw/{shard?}/{key_base}.{ext}",
+		StoragePath:        "originals/{shard?}/{key_base}.{ext}",
 		EnableSharding:      true,
 	}
 
@@ -315,7 +333,7 @@ func TestService_PresignUpload_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			result, err := service.PresignUpload(ctx, tt.request, profile)
+			result, err := service.PresignUpload(ctx, tt.request, profile, "https://test-api.com")
 
 			if tt.expectError {
 				if err == nil {
@@ -359,7 +377,7 @@ func TestService_PresignUpload_SingleStrategy(t *testing.T) {
 		MultipartThresholdMB: 15,
 		PartSizeMB:          8,
 		TokenTTLSeconds:     900,
-		PathTemplate:        "raw/{key_base}.{ext}",
+		StoragePath:        "originals/{key_base}.{ext}",
 		EnableSharding:      false,
 	}
 
@@ -374,7 +392,7 @@ func TestService_PresignUpload_SingleStrategy(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := service.PresignUpload(ctx, request, profile)
+	result, err := service.PresignUpload(ctx, request, profile, "https://test-api.com")
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -392,8 +410,8 @@ func TestService_PresignUpload_SingleStrategy(t *testing.T) {
 		t.Errorf("Expected PUT method, got %s", result.Upload.Single.Method)
 	}
 
-	if result.ObjectKey != "raw/test-key.jpg" {
-		t.Errorf("Expected object key 'raw/test-key.jpg', got '%s'", result.ObjectKey)
+	if result.ObjectKey != "originals/test-key.jpg" {
+		t.Errorf("Expected object key 'originals/test-key.jpg', got '%s'", result.ObjectKey)
 	}
 }
 
@@ -416,7 +434,7 @@ func TestService_PresignUpload_MultipartStrategy(t *testing.T) {
 		MultipartThresholdMB: 15,
 		PartSizeMB:          8,
 		TokenTTLSeconds:     900,
-		PathTemplate:        "raw/{key_base}.{ext}",
+		StoragePath:        "originals/{key_base}.{ext}",
 		EnableSharding:      false,
 	}
 
@@ -431,7 +449,7 @@ func TestService_PresignUpload_MultipartStrategy(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := service.PresignUpload(ctx, request, profile)
+	result, err := service.PresignUpload(ctx, request, profile, "https://test-api.com")
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -461,6 +479,174 @@ func TestService_PresignUpload_MultipartStrategy(t *testing.T) {
 		}
 		if part.Method != "PUT" {
 			t.Errorf("Expected PUT method for part, got %s", part.Method)
+		}
+	}
+
+	// Check complete and abort URLs are populated
+	if result.Upload.Multipart.Complete == nil {
+		t.Errorf("Expected complete URL to be populated")
+	} else {
+		if result.Upload.Multipart.Complete.Method != "POST" {
+			t.Errorf("Expected complete method to be POST, got %s", result.Upload.Multipart.Complete.Method)
+		}
+		expectedCompleteURL := "https://test-api.com/v1/uploads/originals/test-video.mp4/complete/test-upload-id"
+		if result.Upload.Multipart.Complete.URL != expectedCompleteURL {
+			t.Errorf("Expected complete URL '%s', got '%s'", expectedCompleteURL, result.Upload.Multipart.Complete.URL)
+		}
+	}
+
+	if result.Upload.Multipart.Abort == nil {
+		t.Errorf("Expected abort URL to be populated")
+	} else {
+		if result.Upload.Multipart.Abort.Method != "DELETE" {
+			t.Errorf("Expected abort method to be DELETE, got %s", result.Upload.Multipart.Abort.Method)
+		}
+		expectedAbortURL := "https://test-api.com/v1/uploads/originals/test-video.mp4/abort/test-upload-id"
+		if result.Upload.Multipart.Abort.URL != expectedAbortURL {
+			t.Errorf("Expected abort URL '%s', got '%s'", expectedAbortURL, result.Upload.Multipart.Abort.URL)
+		}
+	}
+}
+
+func TestService_CompleteMultipartUpload(t *testing.T) {
+	called := false
+	var capturedParts []s3.PartInfo
+	
+	mockS3 := &MockS3Client{
+		completeMultipartUploadFunc: func(ctx context.Context, key, uploadID string, parts []s3.PartInfo) error {
+			called = true
+			capturedParts = parts
+			if key != "test-object-key" {
+				t.Errorf("Expected key 'test-object-key', got '%s'", key)
+			}
+			if uploadID != "test-upload-id" {
+				t.Errorf("Expected upload ID 'test-upload-id', got '%s'", uploadID)
+			}
+			return nil
+		},
+	}
+	
+	cfg := &config.Config{S3Bucket: "test-bucket"}
+	service := NewService(mockS3, cfg)
+	
+	request := &CompleteMultipartRequest{
+		Parts: []CompletedPart{
+			{PartNumber: 1, ETag: "etag1"},
+			{PartNumber: 2, ETag: "etag2"},
+		},
+	}
+	
+	ctx := context.Background()
+	err := service.CompleteMultipartUpload(ctx, "test-object-key", "test-upload-id", request)
+	
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	
+	if !called {
+		t.Errorf("Expected S3 CompleteMultipartUpload to be called")
+	}
+	
+	if len(capturedParts) != 2 {
+		t.Errorf("Expected 2 parts, got %d", len(capturedParts))
+	}
+	
+	if capturedParts[0].PartNumber != 1 || capturedParts[0].ETag != "etag1" {
+		t.Errorf("Part 1 mismatch: expected {1, etag1}, got {%d, %s}", capturedParts[0].PartNumber, capturedParts[0].ETag)
+	}
+	
+	if capturedParts[1].PartNumber != 2 || capturedParts[1].ETag != "etag2" {
+		t.Errorf("Part 2 mismatch: expected {2, etag2}, got {%d, %s}", capturedParts[1].PartNumber, capturedParts[1].ETag)
+	}
+}
+
+func TestService_AbortMultipartUpload(t *testing.T) {
+	called := false
+	
+	mockS3 := &MockS3Client{
+		abortMultipartUploadFunc: func(ctx context.Context, key, uploadID string) error {
+			called = true
+			if key != "test-object-key" {
+				t.Errorf("Expected key 'test-object-key', got '%s'", key)
+			}
+			if uploadID != "test-upload-id" {
+				t.Errorf("Expected upload ID 'test-upload-id', got '%s'", uploadID)
+			}
+			return nil
+		},
+	}
+	
+	cfg := &config.Config{S3Bucket: "test-bucket"}
+	service := NewService(mockS3, cfg)
+	
+	ctx := context.Background()
+	err := service.AbortMultipartUpload(ctx, "test-object-key", "test-upload-id")
+	
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	
+	if !called {
+		t.Errorf("Expected S3 AbortMultipartUpload to be called")
+	}
+}
+
+func TestService_PresignUpload_WithURLEncoding(t *testing.T) {
+	mockS3 := &MockS3Client{
+		createMultipartUploadFunc: func(ctx context.Context, key string, headers map[string]string) (string, error) {
+			return "test-upload-id", nil
+		},
+		presignUploadPartFunc: func(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error) {
+			return "https://test.s3.amazonaws.com/bucket/" + key, nil
+		},
+	}
+	cfg := &config.Config{S3Bucket: "test-bucket"}
+	service := NewService(mockS3, cfg)
+
+	profile := &config.Profile{
+		Kind:                 "image",
+		AllowedMimes:         []string{"image/jpeg"},
+		SizeMaxBytes:         100 * 1024 * 1024,
+		MultipartThresholdMB: 15,
+		PartSizeMB:          8,
+		TokenTTLSeconds:     900,
+		StoragePath:        "originals/{shard?}/{key_base}.{ext}",
+		EnableSharding:      true,
+	}
+
+	request := &PresignRequest{
+		KeyBase:   "test-key-with-chars",
+		Ext:       "jpg",
+		Mime:      "image/jpeg",
+		SizeBytes: 50 * 1024 * 1024, // Force multipart
+		Kind:      "image",
+		Profile:   "avatar",
+		Multipart: "force",
+	}
+
+	ctx := context.Background()
+	result, err := service.PresignUpload(ctx, request, profile, "https://test-api.com")
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	// Object key should contain shard due to sharding being enabled
+	expectedPrefix := "originals/"
+	if !strings.HasPrefix(result.ObjectKey, expectedPrefix) {
+		t.Errorf("Expected object key to start with '%s', got '%s'", expectedPrefix, result.ObjectKey)
+	}
+
+	// URLs should be properly URL encoded
+	if result.Upload.Multipart.Complete != nil {
+		if !strings.Contains(result.Upload.Multipart.Complete.URL, "/v1/uploads/") {
+			t.Errorf("Complete URL should contain '/v1/uploads/', got: %s", result.Upload.Multipart.Complete.URL)
+		}
+	}
+
+	if result.Upload.Multipart.Abort != nil {
+		if !strings.Contains(result.Upload.Multipart.Abort.URL, "/v1/uploads/") {
+			t.Errorf("Abort URL should contain '/v1/uploads/', got: %s", result.Upload.Multipart.Abort.URL)
 		}
 	}
 }
