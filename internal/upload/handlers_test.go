@@ -60,21 +60,28 @@ func (h *TestHandler) HandlePresign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get upload options for the profile
-	uploadOptions := h.storageConfig.GetUploadOptions(req.Profile)
-	if uploadOptions == nil {
-		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("No upload configuration for profile: %s", req.Profile), "Configure upload_options in your storage config")
+	// Get profile configuration
+	profile := h.storageConfig.GetProfile(req.Profile)
+	if profile == nil {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("No configuration for profile: %s", req.Profile), "Configure profile in your storage config")
 		return
 	}
 
-	// Validate kind matches upload options
-	if uploadOptions.Kind != req.Kind {
-		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("Kind mismatch: expected %s, got %s", uploadOptions.Kind, req.Kind), "")
+	// Validate kind matches profile
+	if profile.Kind != req.Kind {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("Kind mismatch: expected %s, got %s", profile.Kind, req.Kind), "")
 		return
 	}
 
+	// Construct base URL from request
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+	
 	// Generate presigned upload
-	presignResp, err := h.uploadService.PresignUpload(h.ctx, &req, uploadOptions)
+	presignResp, err := h.uploadService.PresignUpload(h.ctx, &req, profile, baseURL)
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "mime type not allowed:") {
@@ -95,6 +102,81 @@ func (h *TestHandler) HandlePresign(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(presignResp)
 }
 
+func (h *TestHandler) HandleCompleteMultipart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.writeError(w, http.StatusMethodNotAllowed, ErrBadRequest, "Method not allowed", "")
+		return
+	}
+
+	// Extract object_key and upload_id from URL path
+	path := strings.TrimPrefix(r.URL.Path, "/v1/uploads/")
+	parts := strings.Split(path, "/complete/")
+	if len(parts) != 2 {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid URL format", "Expected /v1/uploads/{object_key}/complete/{upload_id}")
+		return
+	}
+	
+	objectKey := parts[0]
+	uploadID := parts[1]
+
+	// Parse request body
+	var req CompleteMultipartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid request body", "")
+		return
+	}
+
+	// Validate required fields
+	if len(req.Parts) == 0 {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "parts is required and cannot be empty", "")
+		return
+	}
+
+	// Complete the multipart upload
+	err := h.uploadService.CompleteMultipartUpload(h.ctx, objectKey, uploadID, &req)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, ErrBadRequest, fmt.Sprintf("Failed to complete multipart upload: %v", err), "")
+		return
+	}
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := map[string]string{"status": "completed", "object_key": objectKey}
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func (h *TestHandler) HandleAbortMultipart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		h.writeError(w, http.StatusMethodNotAllowed, ErrBadRequest, "Method not allowed", "")
+		return
+	}
+
+	// Extract object_key and upload_id from URL path
+	path := strings.TrimPrefix(r.URL.Path, "/v1/uploads/")
+	parts := strings.Split(path, "/abort/")
+	if len(parts) != 2 {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid URL format", "Expected /v1/uploads/{object_key}/abort/{upload_id}")
+		return
+	}
+	
+	objectKey := parts[0]
+	uploadID := parts[1]
+
+	// Abort the multipart upload
+	err := h.uploadService.AbortMultipartUpload(h.ctx, objectKey, uploadID)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, ErrBadRequest, fmt.Sprintf("Failed to abort multipart upload: %v", err), "")
+		return
+	}
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := map[string]string{"status": "aborted", "upload_id": uploadID}
+	_ = json.NewEncoder(w).Encode(response)
+}
+
 func (h *TestHandler) writeError(w http.ResponseWriter, statusCode int, code, message, hint string) {
 	errorResp := ErrorResponse{
 		Code:    code,
@@ -109,26 +191,30 @@ func (h *TestHandler) writeError(w http.ResponseWriter, statusCode int, code, me
 
 // UploadService interface for dependency injection
 type UploadService interface {
-	PresignUpload(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error)
+	PresignUpload(ctx context.Context, req *PresignRequest, profile *config.Profile, baseURL string) (*PresignResponse, error)
+	CompleteMultipartUpload(ctx context.Context, objectKey, uploadID string, req *CompleteMultipartRequest) error
+	AbortMultipartUpload(ctx context.Context, objectKey, uploadID string) error
 }
 
 // MockUploadService implements the upload service interface for testing
 type MockUploadService struct {
-	presignUploadFunc func(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error)
+	presignUploadFunc           func(ctx context.Context, req *PresignRequest, profile *config.Profile, baseURL string) (*PresignResponse, error)
+	completeMultipartUploadFunc func(ctx context.Context, objectKey, uploadID string, req *CompleteMultipartRequest) error
+	abortMultipartUploadFunc    func(ctx context.Context, objectKey, uploadID string) error
 }
 
-func (m *MockUploadService) PresignUpload(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error) {
+func (m *MockUploadService) PresignUpload(ctx context.Context, req *PresignRequest, profile *config.Profile, baseURL string) (*PresignResponse, error) {
 	if m.presignUploadFunc != nil {
-		return m.presignUploadFunc(ctx, req, uploadOptions)
+		return m.presignUploadFunc(ctx, req, profile, baseURL)
 	}
 
 	// Default mock response
 	return &PresignResponse{
-		ObjectKey: "raw/ab/test-key.jpg",
+		ObjectKey: "originals/ab/test-key.jpg",
 		Upload: &UploadDetails{
 			Single: &SingleUpload{
 				Method:    "PUT",
-				URL:       "https://test.s3.amazonaws.com/bucket/raw/ab/test-key.jpg",
+				URL:       "https://test.s3.amazonaws.com/bucket/originals/ab/test-key.jpg",
 				Headers:   map[string]string{"Content-Type": "image/jpeg"},
 				ExpiresAt: time.Now().Add(15 * time.Minute),
 			},
@@ -136,11 +222,25 @@ func (m *MockUploadService) PresignUpload(ctx context.Context, req *PresignReque
 	}, nil
 }
 
+func (m *MockUploadService) CompleteMultipartUpload(ctx context.Context, objectKey, uploadID string, req *CompleteMultipartRequest) error {
+	if m.completeMultipartUploadFunc != nil {
+		return m.completeMultipartUploadFunc(ctx, objectKey, uploadID, req)
+	}
+	return nil
+}
+
+func (m *MockUploadService) AbortMultipartUpload(ctx context.Context, objectKey, uploadID string) error {
+	if m.abortMultipartUploadFunc != nil {
+		return m.abortMultipartUploadFunc(ctx, objectKey, uploadID)
+	}
+	return nil
+}
+
 func TestHandler_HandlePresign_Success(t *testing.T) {
 	// Setup
 	mockService := &MockUploadService{}
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind:                 "image",
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
@@ -148,7 +248,7 @@ func TestHandler_HandlePresign_Success(t *testing.T) {
 				MultipartThresholdMB: 15,
 				PartSizeMB:           8,
 				TokenTTLSeconds:      900,
-				PathTemplate:         "raw/{shard?}/{key_base}.{ext}",
+				StoragePath:         "originals/{shard?}/{key_base}.{ext}",
 				EnableSharding:       true,
 			},
 		},
@@ -201,7 +301,7 @@ func TestHandler_HandlePresign_Success(t *testing.T) {
 func TestHandler_HandlePresign_ValidationErrors(t *testing.T) {
 	// Setup
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind:                 "image",
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
@@ -209,7 +309,7 @@ func TestHandler_HandlePresign_ValidationErrors(t *testing.T) {
 				MultipartThresholdMB: 15,
 				PartSizeMB:           8,
 				TokenTTLSeconds:      900,
-				PathTemplate:         "raw/{shard?}/{key_base}.{ext}",
+				StoragePath:         "originals/{shard?}/{key_base}.{ext}",
 				EnableSharding:       true,
 			},
 		},
@@ -378,7 +478,7 @@ func TestHandler_HandlePresign_ValidationErrors(t *testing.T) {
 func TestHandler_HandlePresign_ServiceErrors(t *testing.T) {
 	// Setup
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind:                 "image",
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
@@ -386,7 +486,7 @@ func TestHandler_HandlePresign_ServiceErrors(t *testing.T) {
 				MultipartThresholdMB: 15,
 				PartSizeMB:           8,
 				TokenTTLSeconds:      900,
-				PathTemplate:         "raw/{shard?}/{key_base}.{ext}",
+				StoragePath:         "originals/{shard?}/{key_base}.{ext}",
 				EnableSharding:       true,
 			},
 		},
@@ -421,7 +521,7 @@ func TestHandler_HandlePresign_ServiceErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := &MockUploadService{
-				presignUploadFunc: func(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error) {
+				presignUploadFunc: func(ctx context.Context, req *PresignRequest, profile *config.Profile, baseURL string) (*PresignResponse, error) {
 					return nil, tt.serviceError
 				},
 			}
@@ -467,7 +567,7 @@ func TestHandler_HandlePresign_ServiceErrors(t *testing.T) {
 
 func TestHandler_HandlePresign_InvalidJSON(t *testing.T) {
 	storageConfig := &config.StorageConfig{
-		UploadOptions: map[string]config.UploadOptions{
+		Profiles: map[string]config.Profile{
 			"avatar": {
 				Kind: "image",
 			},
@@ -533,5 +633,331 @@ func TestHandler_writeError(t *testing.T) {
 
 	if errorResp.Hint != "Test hint" {
 		t.Errorf("Expected hint 'Test hint', got '%s'", errorResp.Hint)
+	}
+}
+
+func TestHandler_HandleCompleteMultipart_Success(t *testing.T) {
+	called := false
+	var capturedObjectKey, capturedUploadID string
+	var capturedRequest *CompleteMultipartRequest
+
+	mockService := &MockUploadService{
+		completeMultipartUploadFunc: func(ctx context.Context, objectKey, uploadID string, req *CompleteMultipartRequest) error {
+			called = true
+			capturedObjectKey = objectKey
+			capturedUploadID = uploadID
+			capturedRequest = req
+			return nil
+		},
+	}
+
+	handler := &TestHandler{
+		uploadService: mockService,
+		ctx:           context.Background(),
+	}
+
+	requestBody := CompleteMultipartRequest{
+		Parts: []CompletedPart{
+			{PartNumber: 1, ETag: "etag1"},
+			{PartNumber: 2, ETag: "etag2"},
+		},
+	}
+
+	body, _ := json.Marshal(requestBody)
+	req := httptest.NewRequest("POST", "/v1/uploads/raw/test-object-key.jpg/complete/test-upload-id", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.HandleCompleteMultipart(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d. Body: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	if !called {
+		t.Errorf("Expected service method to be called")
+	}
+
+	if capturedObjectKey != "raw/test-object-key.jpg" {
+		t.Errorf("Expected object key 'raw/test-object-key.jpg', got '%s'", capturedObjectKey)
+	}
+
+	if capturedUploadID != "test-upload-id" {
+		t.Errorf("Expected upload ID 'test-upload-id', got '%s'", capturedUploadID)
+	}
+
+	if len(capturedRequest.Parts) != 2 {
+		t.Errorf("Expected 2 parts, got %d", len(capturedRequest.Parts))
+	}
+
+	var response map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Errorf("Failed to parse response: %v", err)
+	}
+
+	if response["status"] != "completed" {
+		t.Errorf("Expected status 'completed', got '%s'", response["status"])
+	}
+
+	if response["object_key"] != "raw/test-object-key.jpg" {
+		t.Errorf("Expected object_key 'raw/test-object-key.jpg', got '%s'", response["object_key"])
+	}
+}
+
+func TestHandler_HandleCompleteMultipart_ValidationErrors(t *testing.T) {
+	handler := &TestHandler{
+		uploadService: &MockUploadService{},
+		ctx:           context.Background(),
+	}
+
+	tests := []struct {
+		name           string
+		method         string
+		url            string
+		requestBody    interface{}
+		expectedStatus int
+		expectedCode   string
+	}{
+		{
+			name:           "Invalid method",
+			method:         "GET",
+			url:            "/v1/uploads/raw/test-object-key.jpg/complete/test-upload-id",
+			requestBody:    map[string]interface{}{},
+			expectedStatus: http.StatusMethodNotAllowed,
+			expectedCode:   ErrBadRequest,
+		},
+		{
+			name:           "Invalid URL format",
+			method:         "POST",
+			url:            "/v1/uploads/invalid-url",
+			requestBody:    map[string]interface{}{},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   ErrBadRequest,
+		},
+		{
+			name:   "Empty parts",
+			method: "POST",
+			url:    "/v1/uploads/raw/test-object-key.jpg/complete/test-upload-id",
+			requestBody: map[string]interface{}{
+				"parts": []interface{}{},
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   ErrBadRequest,
+		},
+		{
+			name:           "Invalid JSON",
+			method:         "POST",
+			url:            "/v1/uploads/raw/test-object-key.jpg/complete/test-upload-id",
+			requestBody:    "invalid json",
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   ErrBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body []byte
+			if tt.requestBody != nil {
+				if s, ok := tt.requestBody.(string); ok && s == "invalid json" {
+					body = []byte(s)
+				} else {
+					body, _ = json.Marshal(tt.requestBody)
+				}
+			}
+
+			req := httptest.NewRequest(tt.method, tt.url, bytes.NewReader(body))
+			if tt.method == "POST" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+
+			rr := httptest.NewRecorder()
+			handler.HandleCompleteMultipart(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d. Body: %s", tt.expectedStatus, rr.Code, rr.Body.String())
+			}
+
+			var errorResp ErrorResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &errorResp); err != nil {
+				t.Errorf("Failed to parse error response: %v", err)
+			}
+
+			if errorResp.Code != tt.expectedCode {
+				t.Errorf("Expected error code '%s', got '%s'", tt.expectedCode, errorResp.Code)
+			}
+		})
+	}
+}
+
+func TestHandler_HandleAbortMultipart_Success(t *testing.T) {
+	called := false
+	var capturedObjectKey, capturedUploadID string
+
+	mockService := &MockUploadService{
+		abortMultipartUploadFunc: func(ctx context.Context, objectKey, uploadID string) error {
+			called = true
+			capturedObjectKey = objectKey
+			capturedUploadID = uploadID
+			return nil
+		},
+	}
+
+	handler := &TestHandler{
+		uploadService: mockService,
+		ctx:           context.Background(),
+	}
+
+	req := httptest.NewRequest("DELETE", "/v1/uploads/raw/test-object-key.jpg/abort/test-upload-id", nil)
+
+	rr := httptest.NewRecorder()
+	handler.HandleAbortMultipart(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d. Body: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	if !called {
+		t.Errorf("Expected service method to be called")
+	}
+
+	if capturedObjectKey != "raw/test-object-key.jpg" {
+		t.Errorf("Expected object key 'raw/test-object-key.jpg', got '%s'", capturedObjectKey)
+	}
+
+	if capturedUploadID != "test-upload-id" {
+		t.Errorf("Expected upload ID 'test-upload-id', got '%s'", capturedUploadID)
+	}
+
+	var response map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Errorf("Failed to parse response: %v", err)
+	}
+
+	if response["status"] != "aborted" {
+		t.Errorf("Expected status 'aborted', got '%s'", response["status"])
+	}
+
+	if response["upload_id"] != "test-upload-id" {
+		t.Errorf("Expected upload_id 'test-upload-id', got '%s'", response["upload_id"])
+	}
+}
+
+func TestHandler_HandleAbortMultipart_ValidationErrors(t *testing.T) {
+	handler := &TestHandler{
+		uploadService: &MockUploadService{},
+		ctx:           context.Background(),
+	}
+
+	tests := []struct {
+		name           string
+		method         string
+		url            string
+		expectedStatus int
+		expectedCode   string
+	}{
+		{
+			name:           "Invalid method",
+			method:         "POST",
+			url:            "/v1/uploads/raw/test-object-key.jpg/abort/test-upload-id",
+			expectedStatus: http.StatusMethodNotAllowed,
+			expectedCode:   ErrBadRequest,
+		},
+		{
+			name:           "Invalid URL format",
+			method:         "DELETE",
+			url:            "/v1/uploads/invalid-url",
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   ErrBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.url, nil)
+
+			rr := httptest.NewRecorder()
+			handler.HandleAbortMultipart(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d. Body: %s", tt.expectedStatus, rr.Code, rr.Body.String())
+			}
+
+			var errorResp ErrorResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &errorResp); err != nil {
+				t.Errorf("Failed to parse error response: %v", err)
+			}
+
+			if errorResp.Code != tt.expectedCode {
+				t.Errorf("Expected error code '%s', got '%s'", tt.expectedCode, errorResp.Code)
+			}
+		})
+	}
+}
+
+func TestHandler_HandleCompleteMultipart_ServiceError(t *testing.T) {
+	mockService := &MockUploadService{
+		completeMultipartUploadFunc: func(ctx context.Context, objectKey, uploadID string, req *CompleteMultipartRequest) error {
+			return fmt.Errorf("service error")
+		},
+	}
+
+	handler := &TestHandler{
+		uploadService: mockService,
+		ctx:           context.Background(),
+	}
+
+	requestBody := CompleteMultipartRequest{
+		Parts: []CompletedPart{{PartNumber: 1, ETag: "etag1"}},
+	}
+
+	body, _ := json.Marshal(requestBody)
+	req := httptest.NewRequest("POST", "/v1/uploads/raw/test-object-key.jpg/complete/test-upload-id", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.HandleCompleteMultipart(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+	}
+
+	var errorResp ErrorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &errorResp); err != nil {
+		t.Errorf("Failed to parse error response: %v", err)
+	}
+
+	if errorResp.Code != ErrBadRequest {
+		t.Errorf("Expected error code '%s', got '%s'", ErrBadRequest, errorResp.Code)
+	}
+}
+
+func TestHandler_HandleAbortMultipart_ServiceError(t *testing.T) {
+	mockService := &MockUploadService{
+		abortMultipartUploadFunc: func(ctx context.Context, objectKey, uploadID string) error {
+			return fmt.Errorf("service error")
+		},
+	}
+
+	handler := &TestHandler{
+		uploadService: mockService,
+		ctx:           context.Background(),
+	}
+
+	req := httptest.NewRequest("DELETE", "/v1/uploads/raw/test-object-key.jpg/abort/test-upload-id", nil)
+
+	rr := httptest.NewRecorder()
+	handler.HandleAbortMultipart(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, rr.Code)
+	}
+
+	var errorResp ErrorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &errorResp); err != nil {
+		t.Errorf("Failed to parse error response: %v", err)
+	}
+
+	if errorResp.Code != ErrBadRequest {
+		t.Errorf("Expected error code '%s', got '%s'", ErrBadRequest, errorResp.Code)
 	}
 }

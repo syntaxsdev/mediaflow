@@ -4,11 +4,13 @@ A lightweight Go service for processing and serving images with YAML-configurabl
 
 ## Features
 
+- **Presigned Uploads**: `/v1/uploads/presign` - secure direct-to-S3 uploads with validation
 - **Original Image Serving**: `/originals/{type}/{image_id}` - serve original images directly from storage
 - **Thumbnail Generation**: `/thumb/{type}/{image_id}` - on-demand thumbnail generation
-- **YAML Configuration**: Different processing rules per image type (avatar, photo, banner)
+- **Unified Configuration**: Profile-based YAML config combining upload and processing rules
 - **Multiple Formats**: Convert images to WebP, JPEG, PNG with configurable quality
-- **S3 Integration**: Fetch and store images in AWS S3 with folder organization
+- **Video Support**: Ready for video upload and processing (processing features coming soon)
+- **S3 Integration**: Direct S3 uploads with multipart support for large files
 - **CDN-Optimized**: Cache-Control and ETag headers for optimal CDN performance
 - **Graceful Shutdown**: Production-ready server lifecycle management
 
@@ -19,16 +21,146 @@ A lightweight Go service for processing and serving images with YAML-configurabl
 
 ## API Endpoints
 
+### Presigned Uploads
+```
+POST /v1/uploads/presign
+```
+Generates presigned URLs for secure direct-to-S3 uploads.
+
+**Request Body:**
+```json
+{
+  "key_base": "unique-file-id",
+  "ext": "jpg",
+  "mime": "image/jpeg",
+  "size_bytes": 1024000,
+  "kind": "image",
+  "profile": "avatar",
+  "multipart": "auto"
+}
+```
+
+**Response for Single Upload:**
+```json
+{
+  "object_key": "originals/avatars/ab/unique-file-id.jpg",
+  "upload": {
+    "single": {
+      "method": "PUT",
+      "url": "https://presigned-s3-url",
+      "headers": {
+        "Content-Type": "image/jpeg",
+        "If-None-Match": "*"
+      },
+      "expires_at": "2024-01-01T12:00:00Z"
+    }
+  }
+}
+```
+
+**Response for Multipart Upload:**
+```json
+{
+  "object_key": "originals/avatars/ab/unique-file-id.jpg",
+  "upload": {
+    "multipart": {
+      "upload_id": "abc123xyz",
+      "part_size": 8388608,
+      "parts": [
+        {
+          "part_number": 1,
+          "method": "PUT",
+          "url": "https://presigned-s3-part-url-1",
+          "headers": {"Content-Type": "image/jpeg"},
+          "expires_at": "2024-01-01T12:00:00Z"
+        }
+      ],
+      "complete": {
+        "method": "POST",
+        "url": "https://your-api/v1/uploads/originals%2Favatars%2Fab%2Funique-file-id.jpg/complete/abc123xyz",
+        "headers": {"Content-Type": "application/json"},
+        "expires_at": "2024-01-01T12:00:00Z"
+      },
+      "abort": {
+        "method": "DELETE", 
+        "url": "https://your-api/v1/uploads/originals%2Favatars%2Fab%2Funique-file-id.jpg/abort/abc123xyz",
+        "headers": {},
+        "expires_at": "2024-01-01T12:00:00Z"
+      }
+    }
+  }
+}
+```
+
+**Parameters:**
+- `key_base`: Unique identifier for the file
+- `ext`: File extension (optional, for backward compatibility)
+- `mime`: MIME type of the file
+- `size_bytes`: File size in bytes
+- `kind`: Media type (`image` or `video`)
+- `profile`: Configuration profile to use (`avatar`, `photo`, `video`, etc.)
+- `multipart`: Upload strategy (`auto`, `force`, or `off`)
+
+### Multipart Upload Completion
+```
+POST /v1/uploads/{object_key}/complete/{upload_id}
+```
+Completes a multipart upload by providing the ETags for all uploaded parts.
+
+**Request Body:**
+```json
+{
+  "parts": [
+    {
+      "part_number": 1,
+      "etag": "\"d41d8cd98f00b204e9800998ecf8427e\""
+    },
+    {
+      "part_number": 2,
+      "etag": "\"098f6bcd4621d373cade4e832627b4f6\""
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "status": "completed",
+  "object_key": "originals/avatars/ab/unique-file-id.jpg"
+}
+```
+
+### Multipart Upload Abort
+```
+DELETE /v1/uploads/{object_key}/abort/{upload_id}
+```
+Aborts a multipart upload and cleans up any uploaded parts.
+
+**Response:**
+```json
+{
+  "status": "aborted",
+  "upload_id": "abc123xyz"
+}
+```
+
 ### Thumbnails
 ```
 GET /thumb/{type}/{image_id}?width=512
+POST /thumb/{type}/{image_id}
 ```
-Generates and serves thumbnails with configurable dimensions.
+Generates and serves thumbnails with configurable dimensions. POST requests require authentication.
 
-**Parameters:**
+**GET Parameters:**
 - `type`: Image category (avatar, photo, banner, or any configured type)
 - `image_id`: Unique identifier for the image
 - `width`: Image width in pixels (optional, defaults to the type's `default_size` from storage config)
+
+**POST Parameters:**
+- Requires authentication (API key)
+- Request body should contain the image data
+- Used for uploading images to be processed
 
 ### Original Images
 ```
@@ -50,12 +182,22 @@ Returns service health status.
 
 ### Storage Configuration (storage-config.yaml)
 
-MediaFlow uses YAML configuration to define processing rules per image type:
+MediaFlow uses YAML configuration to define profiles that combine upload settings and processing rules:
 
 ```yaml
-storage_options:
+profiles:
   avatar:
-    origin_folder: "originals/avatars"
+    # Upload configuration
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
+    size_max_bytes: 5242880  # 5MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900  # 15 minutes
+    storage_path: "originals/avatars/{shard?}/{key_base}"
+    enable_sharding: true
+    
+    # Processing configuration
     thumb_folder: "thumbnails/avatars"
     sizes: ["128", "256"]
     default_size: "256"
@@ -63,29 +205,96 @@ storage_options:
     convert_to: "webp"
   
   photo:
-    origin_folder: "originals/photos"
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png", "image/webp"]
+    size_max_bytes: 20971520  # 20MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900
+    storage_path: "originals/photos/{shard?}/{key_base}"
+    enable_sharding: true
+    
     thumb_folder: "thumbnails/photos"
     sizes: ["256", "512", "1024"]
     default_size: "256"
     quality: 90
     convert_to: "webp"
   
-  banner:
-    origin_folder: "originals/banners"
-    thumb_folder: "thumbnails/banners"
-    sizes: ["512", "1024", "2048"]
-    default_size: "512"
-    quality: 95
-    convert_to: "webp"
-  
+  video:
+    kind: "video"
+    allowed_mimes: ["video/mp4", "video/quicktime", "video/webm"]
+    size_max_bytes: 104857600  # 100MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 1800  # 30 minutes
+    storage_path: "originals/videos/{shard?}/{key_base}"
+    enable_sharding: true
+    
+    thumb_folder: "posters/videos"  # Video thumbnails
+    proxy_folder: "proxies/videos"   # Compressed versions
+    formats: ["mp4", "webm"]
+    quality: 80
+
   default:
-    origin_folder: "originals"
+    kind: "image"
+    allowed_mimes: ["image/jpeg", "image/png"]
+    size_max_bytes: 10485760  # 10MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 900
+    storage_path: "originals/{shard?}/{key_base}"
+    enable_sharding: true
+    
     thumb_folder: "thumbnails"
     sizes: ["256", "512"]
     default_size: "256"
     quality: 90
     convert_to: "webp"
 ```
+
+### Configuration Fields
+
+#### Upload Configuration
+- `kind`: Media type (`image` or `video`)
+- `allowed_mimes`: Array of allowed MIME types
+- `size_max_bytes`: Maximum file size in bytes
+- `multipart_threshold_mb`: Size threshold for multipart uploads
+- `part_size_mb`: Size of each multipart chunk
+- `token_ttl_seconds`: Presigned URL expiration time
+- `storage_path`: Template for where files are stored in S3 (supports `{key_base}`, `{ext}`, `{shard}`, `{shard?}`)
+- `enable_sharding`: Whether to use sharding for load distribution
+
+#### Processing Configuration  
+- `thumb_folder`: Folder for storing thumbnails
+- `sizes`: Available thumbnail sizes
+- `default_size`: Default thumbnail size if none specified
+- `quality`: Image compression quality (1-100)
+- `convert_to`: Format to convert images to (`webp`, `jpeg`, etc.)
+
+#### Storage Path Templates
+The `storage_path` field uses a template system to define where files are stored:
+- `{key_base}`: The unique file identifier
+- `{ext}`: File extension
+- `{shard}`: Shard value (only when `enable_sharding: true`)
+- `{shard?}`: Optional shard (removed when `enable_sharding: false`)
+
+**Sharding Modes:**
+
+**Auto-sharding** (`enable_sharding: true`):
+- `"originals/{shard?}/{key_base}"` → `originals/ab/my-file.jpg`
+- Shards auto-generated from key_base hash
+- Clients can optionally provide custom shard in request
+
+**Fixed organization** (`enable_sharding: false`):
+- `"originals/user123/{key_base}"` → `originals/user123/my-file.jpg`
+- `"uploads/{year}/{month}/{key_base}"` → Custom organization
+- Any `{shard}` placeholders are removed
+- Custom shards in requests are ignored
+
+Examples:
+- `"originals/{key_base}"` → `originals/my-file.jpg`
+- `"uploads/{shard?}/{key_base}"` → `uploads/ab/my-file.jpg` (with sharding)
+- `"users/team-marketing/{key_base}"` → Fixed custom prefix
 
 ### Environment Variables
 

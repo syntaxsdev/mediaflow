@@ -78,9 +78,9 @@ New endpoint for requesting additional part batches as needed.
 
 ## 4) Configuration
 
-### 4.1 Upload Config Extensions
+### 4.1 Profile Config Extensions
 ```yaml
-upload_options:
+profiles:
   video:
     # ... existing config
     initial_batch_size: 10        # Parts in first response

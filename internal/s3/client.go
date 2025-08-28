@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3Types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 type Client struct {
@@ -140,5 +141,43 @@ func (c *Client) PresignUploadPart(ctx context.Context, key, uploadID string, pa
 	return request.URL, nil
 }
 
-// Note: AWS SDK doesn't support presigning CompleteMultipartUpload and AbortMultipartUpload
-// These operations must be done server-side or using direct API calls
+// CompleteMultipartUpload completes a multipart upload
+func (c *Client) CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []PartInfo) error {
+	completedParts := make([]s3Types.CompletedPart, len(parts))
+	for i, part := range parts {
+		completedParts[i] = s3Types.CompletedPart{
+			ETag:       aws.String(part.ETag),
+			PartNumber: aws.Int32(int32(part.PartNumber)),
+		}
+	}
+
+	input := &s3.CompleteMultipartUploadInput{
+		Bucket:   aws.String(c.bucket),
+		Key:      aws.String(key),
+		UploadId: aws.String(uploadID),
+		MultipartUpload: &s3Types.CompletedMultipartUpload{
+			Parts: completedParts,
+		},
+	}
+
+	_, err := c.s3Client.CompleteMultipartUpload(ctx, input)
+	return err
+}
+
+// AbortMultipartUpload aborts a multipart upload
+func (c *Client) AbortMultipartUpload(ctx context.Context, key, uploadID string) error {
+	input := &s3.AbortMultipartUploadInput{
+		Bucket:   aws.String(c.bucket),
+		Key:      aws.String(key),
+		UploadId: aws.String(uploadID),
+	}
+
+	_, err := c.s3Client.AbortMultipartUpload(ctx, input)
+	return err
+}
+
+// PartInfo represents a completed part for multipart upload
+type PartInfo struct {
+	ETag       string
+	PartNumber int
+}

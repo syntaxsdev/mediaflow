@@ -78,7 +78,7 @@ type UploadConfig struct {
 	TokenTTLSeconds     int64           `yaml:"token_ttl_seconds"`
 	SigningAlgorithm    string          `yaml:"signing_alg"`
 	ActiveKeyID         string          `yaml:"active_kid"`
-	PathTemplateRaw     string          `yaml:"path_template_raw"`
+	StoragePathRaw      string          `yaml:"storage_path_raw"`
 	EnableSharding      bool            `yaml:"enable_sharding"`
 	Policies            []UploadPolicy  `yaml:"policies"`
 }
@@ -89,6 +89,17 @@ type ErrorResponse struct {
 	Message           string `json:"message"`
 	Hint              string `json:"hint,omitempty"`
 	RetryAfterSeconds int    `json:"retry_after_seconds,omitempty"`
+}
+
+// CompleteMultipartRequest represents the request to complete a multipart upload
+type CompleteMultipartRequest struct {
+	Parts []CompletedPart `json:"parts" validate:"required,min=1"`
+}
+
+// CompletedPart represents a completed part with its ETag
+type CompletedPart struct {
+	PartNumber int    `json:"part_number" validate:"required,min=1"`
+	ETag       string `json:"etag" validate:"required"`
 }
 
 // Standard error codes

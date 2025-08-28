@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"mediaflow/internal/config"
+	"mediaflow/internal/s3"
 )
 
 type Service struct {
@@ -24,35 +25,39 @@ func NewService(s3Client S3Client, config *config.Config) *Service {
 }
 
 // PresignUpload generates presigned URLs for upload based on the request
-func (s *Service) PresignUpload(ctx context.Context, req *PresignRequest, uploadOptions *config.UploadOptions) (*PresignResponse, error) {
+func (s *Service) PresignUpload(ctx context.Context, req *PresignRequest, profile *config.Profile, baseURL string) (*PresignResponse, error) {
 	// Validate MIME type
-	if !s.isMimeAllowed(req.Mime, uploadOptions.AllowedMimes) {
+	if !s.isMimeAllowed(req.Mime, profile.AllowedMimes) {
 		return nil, fmt.Errorf("mime type not allowed: %s", req.Mime)
 	}
 
 	// Validate file size
-	if req.SizeBytes > uploadOptions.SizeMaxBytes {
-		return nil, fmt.Errorf("file size exceeds maximum: %d > %d", req.SizeBytes, uploadOptions.SizeMaxBytes)
+	if req.SizeBytes > profile.SizeMaxBytes {
+		return nil, fmt.Errorf("file size exceeds maximum: %d > %d", req.SizeBytes, profile.SizeMaxBytes)
 	}
 
-	// Generate shard if not provided and sharding is enabled
-	shard := req.Shard
-	if shard == "" && uploadOptions.EnableSharding {
-		shard = GenerateShard(req.KeyBase)
+	// Generate shard only if auto-sharding is enabled
+	shard := ""
+	if profile.EnableSharding {
+		shard = req.Shard
+		if shard == "" {
+			shard = GenerateShard(req.KeyBase)
+		}
 	}
+	// Note: If EnableSharding is false, any shard in request is ignored
 
 	// Build object key from template
-	objectKey := s.buildObjectKey(uploadOptions.PathTemplate, req.KeyBase, req.Ext, shard)
+	objectKey := s.buildObjectKey(profile.StoragePath, req.KeyBase, req.Ext, shard)
 
 	// Determine upload strategy
-	strategy := s.determineStrategy(req.Multipart, req.SizeBytes, uploadOptions.MultipartThresholdMB)
+	strategy := s.determineStrategy(req.Multipart, req.SizeBytes, profile.MultipartThresholdMB)
 
 	// Create required headers
 	headers := s.buildRequiredHeaders(req.Mime)
 
 	// Create presigned URLs based on strategy
-	expiresAt := time.Now().Add(time.Duration(uploadOptions.TokenTTLSeconds) * time.Second)
-	uploadDetails, err := s.createUploadDetails(ctx, strategy, objectKey, headers, expiresAt, uploadOptions.PartSizeMB, req.SizeBytes)
+	expiresAt := time.Now().Add(time.Duration(profile.TokenTTLSeconds) * time.Second)
+	uploadDetails, err := s.createUploadDetails(ctx, strategy, objectKey, headers, expiresAt, profile.PartSizeMB, req.SizeBytes, baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upload details: %w", err)
 	}
@@ -124,7 +129,7 @@ func (s *Service) buildRequiredHeaders(mime string) map[string]string {
 	return headers
 }
 
-func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey string, headers map[string]string, expiresAt time.Time, partSizeMB int64, totalSizeBytes int64) (*UploadDetails, error) {
+func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey string, headers map[string]string, expiresAt time.Time, partSizeMB int64, totalSizeBytes int64, baseURL string) (*UploadDetails, error) {
 	expires := time.Until(expiresAt)
 	
 	if strategy == "single" {
@@ -183,15 +188,52 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 		}
 	}
 	
+	// Generate server-side URLs for complete and abort operations
+	if baseURL == "" {
+		baseURL = "http://localhost:8080" // Default fallback
+	}
+	
+	completeURL := fmt.Sprintf("%s/v1/uploads/%s/complete/%s", baseURL, objectKey, uploadID)
+	abortURL := fmt.Sprintf("%s/v1/uploads/%s/abort/%s", baseURL, objectKey, uploadID)
+	
 	return &UploadDetails{
 		Multipart: &MultipartUpload{
 			UploadID: uploadID,
 			PartSize: partSizeBytes,
 			Parts:    parts,
-			// Note: Complete and Abort operations aren't presignable, 
-			// client must handle these via direct API calls
+			Complete: &UploadAction{
+				Method:    "POST",
+				URL:       completeURL,
+				Headers:   map[string]string{"Content-Type": "application/json"},
+				ExpiresAt: expiresAt,
+			},
+			Abort: &UploadAction{
+				Method:    "DELETE",
+				URL:       abortURL,
+				Headers:   map[string]string{},
+				ExpiresAt: expiresAt,
+			},
 		},
 	}, nil
+}
+
+// CompleteMultipartUpload completes a multipart upload
+func (s *Service) CompleteMultipartUpload(ctx context.Context, objectKey, uploadID string, req *CompleteMultipartRequest) error {
+	// Convert request parts to s3.PartInfo
+	parts := make([]s3.PartInfo, len(req.Parts))
+	for i, part := range req.Parts {
+		parts[i] = s3.PartInfo{
+			PartNumber: part.PartNumber,
+			ETag:       part.ETag,
+		}
+	}
+	
+	return s.s3Client.CompleteMultipartUpload(ctx, objectKey, uploadID, parts)
+}
+
+// AbortMultipartUpload aborts a multipart upload
+func (s *Service) AbortMultipartUpload(ctx context.Context, objectKey, uploadID string) error {
+	return s.s3Client.AbortMultipartUpload(ctx, objectKey, uploadID)
 }
 
 // GenerateShard creates a shard from key_base using SHA1 hash
