@@ -36,11 +36,15 @@ func (s *Service) PresignUpload(ctx context.Context, req *PresignRequest, profil
 		return nil, fmt.Errorf("file size exceeds maximum: %d > %d", req.SizeBytes, profile.SizeMaxBytes)
 	}
 
-	// Generate shard if not provided and sharding is enabled
-	shard := req.Shard
-	if shard == "" && profile.EnableSharding {
-		shard = GenerateShard(req.KeyBase)
+	// Generate shard only if auto-sharding is enabled
+	shard := ""
+	if profile.EnableSharding {
+		shard = req.Shard
+		if shard == "" {
+			shard = GenerateShard(req.KeyBase)
+		}
 	}
+	// Note: If EnableSharding is false, any shard in request is ignored
 
 	// Build object key from template
 	objectKey := s.buildObjectKey(profile.StoragePath, req.KeyBase, req.Ext, shard)

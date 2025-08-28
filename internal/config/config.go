@@ -101,7 +101,22 @@ func LoadStorageConfig(s3 *s3.Client, config *Config) (*StorageConfig, error) {
 		return nil, fmt.Errorf("failed to parse storage config: %w", err)
 	}
 
+	// Validate that all profiles have required storage_path field
+	if err := validateStorageConfig(&storageConfig); err != nil {
+		return nil, err
+	}
+
 	return &storageConfig, nil
+}
+
+// validateStorageConfig ensures all profiles have required fields
+func validateStorageConfig(config *StorageConfig) error {
+	for profileName, profile := range config.Profiles {
+		if profile.StoragePath == "" {
+			return fmt.Errorf("profile '%s' is missing required 'storage_path' field", profileName)
+		}
+	}
+	return nil
 }
 
 // GetProfile returns a profile by name

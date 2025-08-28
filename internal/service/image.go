@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -43,7 +44,7 @@ func NewImageService(cfg *config.Config) *ImageService {
 
 // buildStoragePath builds the storage path from template and filename
 // This derives the path where files are actually stored based on the upload template
-func (s *ImageService) buildStoragePath(template, filename string) string {
+func (s *ImageService) buildStoragePath(template, filename string, enableSharding bool) string {
 	// Extract key_base and ext from filename
 	parts := strings.Split(filename, ".")
 	keyBase := parts[0]
@@ -52,25 +53,39 @@ func (s *ImageService) buildStoragePath(template, filename string) string {
 		ext = parts[len(parts)-1]
 	}
 	
-	// Simple template replacement for image retrieval
-	// For now, we'll assume no sharding in image retrieval since we don't have the original key_base
+	// Generate shard if sharding is enabled
+	shard := ""
+	if enableSharding {
+		shard = s.generateShard(keyBase)
+	}
+	
+	// Template replacement for image retrieval
 	path := template
 	path = strings.ReplaceAll(path, "{key_base}", keyBase)
 	path = strings.ReplaceAll(path, "{ext}", ext)
 	
-	// Remove shard placeholders since we can't reconstruct them from filename alone
-	path = strings.ReplaceAll(path, "/{shard?}", "")
-	path = strings.ReplaceAll(path, "{shard?}/", "")
-	path = strings.ReplaceAll(path, "{shard?}", "")
-	path = strings.ReplaceAll(path, "/{shard}", "")
-	path = strings.ReplaceAll(path, "{shard}/", "")
-	path = strings.ReplaceAll(path, "{shard}", "")
+	// Handle shard placeholders
+	if shard != "" {
+		path = strings.ReplaceAll(path, "{shard?}", shard)
+		path = strings.ReplaceAll(path, "{shard}", shard)
+	} else {
+		// Remove shard placeholders if no shard
+		path = strings.ReplaceAll(path, "/{shard?}", "")
+		path = strings.ReplaceAll(path, "{shard?}/", "")
+		path = strings.ReplaceAll(path, "{shard?}", "")
+	}
 	
 	return path
 }
 
+// generateShard creates a shard from key_base using SHA1 hash (same logic as upload service)
+func (s *ImageService) generateShard(keyBase string) string {
+	hash := sha1.Sum([]byte(keyBase))
+	return fmt.Sprintf("%02x", hash[:1]) // First 2 hex characters
+}
+
 func (s *ImageService) UploadImage(ctx context.Context, profile *config.Profile, imageData []byte, thumbType, imagePath string) error {
-	orig_path := s.buildStoragePath(profile.StoragePath, imagePath)
+	orig_path := s.buildStoragePath(profile.StoragePath, imagePath, profile.EnableSharding)
 	convertType := profile.ConvertTo
 	
 	// Upload original image in parallel with thumbnail generation
@@ -196,7 +211,7 @@ func (s *ImageService) createThumbnailPathForSize(originalPath, size, newType st
 func (s *ImageService) GetImage(ctx context.Context, profile *config.Profile, original bool, baseImageName, size string) ([]byte, error) {
 	var path string
 	if original {
-		path = s.buildStoragePath(profile.StoragePath, baseImageName)
+		path = s.buildStoragePath(profile.StoragePath, baseImageName, profile.EnableSharding)
 	} else {
 		if size == "" && !original {
 			if profile.DefaultSize == "" {

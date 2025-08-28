@@ -43,7 +43,7 @@ Generates presigned URLs for secure direct-to-S3 uploads.
 **Response for Single Upload:**
 ```json
 {
-  "object_key": "raw/ab/unique-file-id.jpg",
+  "object_key": "originals/avatars/ab/unique-file-id.jpg",
   "upload": {
     "single": {
       "method": "PUT",
@@ -61,7 +61,7 @@ Generates presigned URLs for secure direct-to-S3 uploads.
 **Response for Multipart Upload:**
 ```json
 {
-  "object_key": "raw/ab/unique-file-id.jpg",
+  "object_key": "originals/avatars/ab/unique-file-id.jpg",
   "upload": {
     "multipart": {
       "upload_id": "abc123xyz",
@@ -77,13 +77,13 @@ Generates presigned URLs for secure direct-to-S3 uploads.
       ],
       "complete": {
         "method": "POST",
-        "url": "https://your-api/v1/uploads/raw%2Fab%2Funique-file-id.jpg/complete/abc123xyz",
+        "url": "https://your-api/v1/uploads/originals%2Favatars%2Fab%2Funique-file-id.jpg/complete/abc123xyz",
         "headers": {"Content-Type": "application/json"},
         "expires_at": "2024-01-01T12:00:00Z"
       },
       "abort": {
         "method": "DELETE", 
-        "url": "https://your-api/v1/uploads/raw%2Fab%2Funique-file-id.jpg/abort/abc123xyz",
+        "url": "https://your-api/v1/uploads/originals%2Favatars%2Fab%2Funique-file-id.jpg/abort/abc123xyz",
         "headers": {},
         "expires_at": "2024-01-01T12:00:00Z"
       }
@@ -127,7 +127,7 @@ Completes a multipart upload by providing the ETags for all uploaded parts.
 ```json
 {
   "status": "completed",
-  "object_key": "raw/ab/unique-file-id.jpg"
+  "object_key": "originals/avatars/ab/unique-file-id.jpg"
 }
 ```
 
@@ -275,13 +275,26 @@ profiles:
 The `storage_path` field uses a template system to define where files are stored:
 - `{key_base}`: The unique file identifier
 - `{ext}`: File extension
-- `{shard}`: Shard value (if sharding enabled)
-- `{shard?}`: Optional shard (removed if sharding disabled)
+- `{shard}`: Shard value (only when `enable_sharding: true`)
+- `{shard?}`: Optional shard (removed when `enable_sharding: false`)
+
+**Sharding Modes:**
+
+**Auto-sharding** (`enable_sharding: true`):
+- `"originals/{shard?}/{key_base}"` → `originals/ab/my-file.jpg`
+- Shards auto-generated from key_base hash
+- Clients can optionally provide custom shard in request
+
+**Fixed organization** (`enable_sharding: false`):
+- `"originals/user123/{key_base}"` → `originals/user123/my-file.jpg`
+- `"uploads/{year}/{month}/{key_base}"` → Custom organization
+- Any `{shard}` placeholders are removed
+- Custom shards in requests are ignored
 
 Examples:
 - `"originals/{key_base}"` → `originals/my-file.jpg`
 - `"uploads/{shard?}/{key_base}"` → `uploads/ab/my-file.jpg` (with sharding)
-- `"users/{user_id}/{key_base}"` → Custom organization by user
+- `"users/team-marketing/{key_base}"` → Fixed custom prefix
 
 ### Environment Variables
 

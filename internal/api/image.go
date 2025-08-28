@@ -66,6 +66,10 @@ func (h *ImageAPI) HandleThumbnailTypes(w http.ResponseWriter, r *http.Request) 
 
 func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, imageData []byte, thumbType, imagePath string) {
 	profile := h.storageConfig.GetProfile(thumbType)
+	if profile == nil {
+		response.JSON(fmt.Sprintf("Profile '%s' not found", thumbType)).WriteError(w, http.StatusNotFound)
+		return
+	}
 	baseName := utils.BaseName(imagePath)
 	if r.Method == http.MethodPost {
 		err := h.imageService.UploadImage(h.ctx, profile, imageData, thumbType, baseName)
@@ -106,6 +110,10 @@ func (h *ImageAPI) HandleOriginals(w http.ResponseWriter, r *http.Request) {
 	baseName := utils.BaseName(fileName)
 
 	profile := h.storageConfig.GetProfile(thumbType)
+	if profile == nil {
+		response.JSON(fmt.Sprintf("Profile '%s' not found", thumbType)).WriteError(w, http.StatusNotFound)
+		return
+	}
 	if r.Method == http.MethodGet {
 		imageData, err := h.imageService.GetImage(h.ctx, profile, true, baseName, "")
 		if err != nil {
