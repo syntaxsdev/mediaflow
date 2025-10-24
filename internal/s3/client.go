@@ -16,12 +16,12 @@ import (
 )
 
 type Client struct {
-	s3Client   *s3.Client
-	bucket     string
-	presigner  *s3.PresignClient
+	s3Client  *s3.Client
+	bucket    string
+	presigner *s3.PresignClient
 }
 
-func NewClient(ctx context.Context, region, bucket, accessKey, secretKey, endpoint string) (*Client, error) {
+func NewClient(ctx context.Context, region, bucket, accessKey, secretKey, endpoint, publicEndpoint string) (*Client, error) {
 	var cfg aws.Config
 	var err error
 
@@ -40,6 +40,7 @@ func NewClient(ctx context.Context, region, bucket, accessKey, secretKey, endpoi
 		utils.Shutdown(fmt.Sprintf("🚨 Failed to load AWS config: %v", err))
 	}
 
+	// Create S3 client for internal operations
 	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		if endpoint != "" {
 			o.BaseEndpoint = aws.String(endpoint)
@@ -47,7 +48,19 @@ func NewClient(ctx context.Context, region, bucket, accessKey, secretKey, endpoi
 		}
 	})
 
-	presigner := s3.NewPresignClient(s3Client)
+	// Create presigner - use public endpoint if different from internal
+	var presigner *s3.PresignClient
+	if publicEndpoint != "" && publicEndpoint != endpoint {
+		// Create a separate S3 client for presigning with the public endpoint
+		publicS3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(publicEndpoint)
+			o.UsePathStyle = true
+		})
+		presigner = s3.NewPresignClient(publicS3Client)
+	} else {
+		// Use the same client for presigning
+		presigner = s3.NewPresignClient(s3Client)
+	}
 
 	return &Client{
 		s3Client:  s3Client,

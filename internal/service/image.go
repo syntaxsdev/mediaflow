@@ -31,6 +31,7 @@ func NewImageService(cfg *config.Config) *ImageService {
 		cfg.AWSAccessKey,
 		cfg.AWSSecretKey,
 		cfg.S3Endpoint,
+		cfg.PublicS3Endpoint,
 	)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create S3 client: %v", err))
@@ -52,18 +53,18 @@ func (s *ImageService) buildStoragePath(template, filename string, enableShardin
 	if len(parts) > 1 {
 		ext = parts[len(parts)-1]
 	}
-	
+
 	// Generate shard if sharding is enabled
 	shard := ""
 	if enableSharding {
 		shard = s.generateShard(keyBase)
 	}
-	
+
 	// Template replacement for image retrieval
 	path := template
 	path = strings.ReplaceAll(path, "{key_base}", keyBase)
 	path = strings.ReplaceAll(path, "{ext}", ext)
-	
+
 	// Handle shard placeholders
 	if shard != "" {
 		path = strings.ReplaceAll(path, "{shard?}", shard)
@@ -74,7 +75,7 @@ func (s *ImageService) buildStoragePath(template, filename string, enableShardin
 		path = strings.ReplaceAll(path, "{shard?}/", "")
 		path = strings.ReplaceAll(path, "{shard?}", "")
 	}
-	
+
 	return path
 }
 
@@ -87,7 +88,7 @@ func (s *ImageService) generateShard(keyBase string) string {
 func (s *ImageService) UploadImage(ctx context.Context, profile *config.Profile, imageData []byte, thumbType, imagePath string) error {
 	orig_path := s.buildStoragePath(profile.StoragePath, imagePath, profile.EnableSharding)
 	convertType := profile.ConvertTo
-	
+
 	// Upload original image in parallel with thumbnail generation
 	origUploadChan := make(chan error, 1)
 	go func() {
@@ -106,10 +107,10 @@ func (s *ImageService) UploadImage(ctx context.Context, profile *config.Profile,
 		path    string
 		err     error
 	}
-	
+
 	thumbJobs := make(chan thumbnailJob, len(profile.Sizes))
 	uploadErrors := make(chan error, len(profile.Sizes))
-	
+
 	// Generate thumbnails in parallel
 	for _, sizeStr := range profile.Sizes {
 		go func(size string) {
@@ -127,7 +128,7 @@ func (s *ImageService) UploadImage(ctx context.Context, profile *config.Profile,
 
 			thumbSizePath := s.createThumbnailPathForSize(imagePath, size, convertType)
 			thumbFullPath := fmt.Sprintf("%s/%s", profile.ThumbFolder, thumbSizePath)
-			
+
 			thumbJobs <- thumbnailJob{
 				sizeStr: size,
 				data:    thumbnailData,
@@ -145,7 +146,7 @@ func (s *ImageService) UploadImage(ctx context.Context, profile *config.Profile,
 				uploadErrors <- job.err
 				return
 			}
-			
+
 			err := s.S3Client.PutObject(ctx, job.path, bytes.NewReader(job.data))
 			if err != nil {
 				uploadErrors <- fmt.Errorf("failed to upload thumbnail for size %s: %w", job.sizeStr, err)
@@ -175,25 +176,25 @@ func (s *ImageService) generateThumbnail(imageData []byte, width, quality int, c
 		Width:   width,
 		Quality: quality,
 	}
-	
+
 	// Set output format
 	switch convertTo {
 	case "webp":
 		options.Type = bimg.WEBP
 	case "jpeg", "jpg":
-		options.Type = bimg.JPEG  
+		options.Type = bimg.JPEG
 	case "png":
 		options.Type = bimg.PNG
 	default:
 		// Default to JPEG if format is unknown (fallback)
 		options.Type = bimg.JPEG
 	}
-	
+
 	resizedData, err := bimg.NewImage(imageData).Process(options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process image with bimg: %w", err)
 	}
-	
+
 	return resizedData, nil
 }
 

@@ -11,28 +11,38 @@ import (
 )
 
 type Config struct {
-	Port         string
-	S3Endpoint   string
-	S3Bucket     string
-	S3Region     string
-	AWSAccessKey string
-	AWSSecretKey string
-	CacheMaxAge  string
+	Port             string
+	S3Endpoint       string // Endpoint for internal operations
+	PublicS3Endpoint string // Endpoint for presigned URLs (falls back to S3Endpoint if not set)
+	S3Bucket         string
+	S3Region         string
+	AWSAccessKey     string
+	AWSSecretKey     string
+	CacheMaxAge      string
 	// API authentication
-	APIKey       string
+	APIKey string
 }
 
 func Load() *Config {
+	s3Endpoint := getEnv("S3_ENDPOINT", "")
+	publicEndpoint := getEnv("PUBLIC_S3_ENDPOINT", "")
+
+	// If PUBLIC_S3_ENDPOINT is not set, fall back to S3_ENDPOINT
+	if publicEndpoint == "" {
+		publicEndpoint = s3Endpoint
+	}
+
 	return &Config{
-		Port:         getEnv("PORT", "8080"),
-		S3Endpoint:   getEnv("S3_ENDPOINT", ""),
-		S3Bucket:     getEnv("S3_BUCKET", ""),
-		S3Region:     getEnv("S3_REGION", "us-east-1"),
-		AWSAccessKey: getEnv("AWS_ACCESS_KEY_ID", ""),
-		AWSSecretKey: getEnv("AWS_SECRET_ACCESS_KEY", ""),
-		CacheMaxAge:  getEnv("CACHE_MAX_AGE", "86400"),
+		Port:             getEnv("PORT", "8080"),
+		S3Endpoint:       s3Endpoint,
+		PublicS3Endpoint: publicEndpoint,
+		S3Bucket:         getEnv("S3_BUCKET", ""),
+		S3Region:         getEnv("S3_REGION", "us-east-1"),
+		AWSAccessKey:     getEnv("AWS_ACCESS_KEY_ID", ""),
+		AWSSecretKey:     getEnv("AWS_SECRET_ACCESS_KEY", ""),
+		CacheMaxAge:      getEnv("CACHE_MAX_AGE", "86400"),
 		// API authentication
-		APIKey:       getEnv("API_KEY", ""),
+		APIKey: getEnv("API_KEY", ""),
 	}
 }
 
@@ -47,17 +57,17 @@ type Profile struct {
 	TokenTTLSeconds      int64    `yaml:"token_ttl_seconds"`
 	StoragePath          string   `yaml:"storage_path"`
 	EnableSharding       bool     `yaml:"enable_sharding"`
-	
+
 	// Processing configuration (shared)
-	ThumbFolder   string   `yaml:"thumb_folder,omitempty"`
-	Quality       int      `yaml:"quality,omitempty"`
-	CacheDuration int      `yaml:"cache_duration,omitempty"` // in seconds
-	
+	ThumbFolder   string `yaml:"thumb_folder,omitempty"`
+	Quality       int    `yaml:"quality,omitempty"`
+	CacheDuration int    `yaml:"cache_duration,omitempty"` // in seconds
+
 	// Processing configuration (images)
 	Sizes       []string `yaml:"sizes,omitempty"`
 	DefaultSize string   `yaml:"default_size,omitempty"`
 	ConvertTo   string   `yaml:"convert_to,omitempty"`
-	
+
 	// Processing configuration (videos)
 	ProxyFolder string   `yaml:"proxy_folder,omitempty"`
 	Formats     []string `yaml:"formats,omitempty"`
@@ -138,23 +148,21 @@ func (sc *StorageConfig) GetProfile(profileName string) *Profile {
 	return nil
 }
 
-
 func DefaultProfile() *Profile {
 	return &Profile{
 		Kind:                 "image",
 		AllowedMimes:         []string{"image/jpeg", "image/png"},
 		SizeMaxBytes:         10485760, // 10MB
 		MultipartThresholdMB: 15,
-		PartSizeMB:          8,
-		TokenTTLSeconds:     900,
-		StoragePath:         "originals/{shard?}/{key_base}",
-		EnableSharding:      true,
-		ThumbFolder:         "thumbnails",
-		Sizes:               []string{"256", "512", "1024"},
-		Quality:             90,
+		PartSizeMB:           8,
+		TokenTTLSeconds:      900,
+		StoragePath:          "originals/{shard?}/{key_base}",
+		EnableSharding:       true,
+		ThumbFolder:          "thumbnails",
+		Sizes:                []string{"256", "512", "1024"},
+		Quality:              90,
 	}
 }
-
 
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
