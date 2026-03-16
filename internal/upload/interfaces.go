@@ -14,4 +14,6 @@ type S3Client interface {
 	PresignUploadPart(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error)
 	CompleteMultipartUpload(ctx context.Context, key, uploadID string, parts []s3.PartInfo) error
 	AbortMultipartUpload(ctx context.Context, key, uploadID string) error
+	DeleteObject(ctx context.Context, key string) error
+	ListByPrefix(ctx context.Context, prefix string) ([]string, error)
 }

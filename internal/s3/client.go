@@ -189,6 +189,34 @@ func (c *Client) AbortMultipartUpload(ctx context.Context, key, uploadID string)
 	return err
 }
 
+// DeleteObject deletes a single object from S3/R2 by key.
+func (c *Client) DeleteObject(ctx context.Context, key string) error {
+	_, err := c.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
+// ListByPrefix returns all object keys matching the given prefix.
+func (c *Client) ListByPrefix(ctx context.Context, prefix string) ([]string, error) {
+	input := &s3.ListObjectsV2Input{
+		Bucket: aws.String(c.bucket),
+		Prefix: aws.String(prefix),
+	}
+
+	result, err := c.s3Client.ListObjectsV2(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make([]string, 0, len(result.Contents))
+	for _, obj := range result.Contents {
+		keys = append(keys, *obj.Key)
+	}
+	return keys, nil
+}
+
 // PartInfo represents a completed part for multipart upload
 type PartInfo struct {
 	ETag       string
