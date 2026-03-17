@@ -186,6 +186,51 @@ func (h *Handler) HandleAbortMultipart(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+// HandleDeleteAsset handles DELETE /v1/assets/{profile}/{key_base}
+// Deletes the original file and all generated thumbnails for an asset.
+func (h *Handler) HandleDeleteAsset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		h.writeError(w, http.StatusMethodNotAllowed, ErrBadRequest, "Method not allowed", "")
+		return
+	}
+
+	// Extract profile and key_base from URL path
+	path := strings.TrimPrefix(r.URL.Path, "/v1/assets/")
+	slashIdx := strings.Index(path, "/")
+	if slashIdx < 1 || slashIdx == len(path)-1 {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid URL format", "Expected /v1/assets/{profile}/{key_base}")
+		return
+	}
+
+	profileName := path[:slashIdx]
+	keyBase := path[slashIdx+1:]
+
+	// Look up profile config
+	profile := h.storageConfig.GetProfile(profileName)
+	if profile == nil {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("Unknown profile: %s", profileName), "")
+		return
+	}
+
+	// Delete the original + thumbnails
+	deleted, err := h.uploadService.DeleteAsset(h.ctx, profile, keyBase)
+	if err != nil {
+		fmt.Printf("Delete asset error: %v\n", err)
+		h.writeError(w, http.StatusInternalServerError, ErrStorageDenied, fmt.Sprintf("Failed to delete asset: %v", err), "")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := map[string]any{
+		"status":        "deleted",
+		"profile":       profileName,
+		"key_base":      keyBase,
+		"objects_deleted": deleted,
+	}
+	_ = json.NewEncoder(w).Encode(response)
+}
+
 // writeError writes a standardized error response
 func (h *Handler) writeError(w http.ResponseWriter, statusCode int, code, message, hint string) {
 	errorResp := ErrorResponse{

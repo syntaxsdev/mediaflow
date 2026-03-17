@@ -54,6 +54,14 @@ func (m *MockS3Client) AbortMultipartUpload(ctx context.Context, key, uploadID s
 	return nil
 }
 
+func (m *MockS3Client) DeleteObject(ctx context.Context, key string) error {
+	return nil
+}
+
+func (m *MockS3Client) ListByPrefix(ctx context.Context, prefix string) ([]string, error) {
+	return nil, nil
+}
+
 func TestGenerateShard(t *testing.T) {
 	tests := []struct {
 		keyBase  string

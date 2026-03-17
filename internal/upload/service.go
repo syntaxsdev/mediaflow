@@ -236,6 +236,42 @@ func (s *Service) AbortMultipartUpload(ctx context.Context, objectKey, uploadID 
 	return s.s3Client.AbortMultipartUpload(ctx, objectKey, uploadID)
 }
 
+// DeleteAsset deletes an asset's original file and all generated thumbnails from R2.
+// It resolves the storage paths from the profile config, handling sharding if enabled.
+func (s *Service) DeleteAsset(ctx context.Context, profile *config.Profile, keyBase string) (int, error) {
+	// Build the original object key (same logic as upload)
+	shard := ""
+	if profile.EnableSharding {
+		shard = GenerateShard(keyBase)
+	}
+	originalKey := s.buildObjectKey(profile.StoragePath, keyBase, "", shard)
+
+	deleted := 0
+
+	// Delete the original file
+	if err := s.s3Client.DeleteObject(ctx, originalKey); err != nil {
+		return 0, fmt.Errorf("failed to delete original %s: %w", originalKey, err)
+	}
+	deleted++
+
+	// Delete thumbnails if the profile has a thumb_folder
+	if profile.ThumbFolder != "" {
+		thumbPrefix := fmt.Sprintf("%s/%s", profile.ThumbFolder, keyBase)
+		thumbKeys, err := s.s3Client.ListByPrefix(ctx, thumbPrefix)
+		if err != nil {
+			// Non-fatal: original is deleted, thumbs may not exist
+			return deleted, nil
+		}
+		for _, key := range thumbKeys {
+			if err := s.s3Client.DeleteObject(ctx, key); err == nil {
+				deleted++
+			}
+		}
+	}
+
+	return deleted, nil
+}
+
 // GenerateShard creates a shard from key_base using SHA1 hash
 func GenerateShard(keyBase string) string {
 	hash := sha1.Sum([]byte(keyBase))
