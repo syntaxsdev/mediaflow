@@ -71,20 +71,13 @@ profiles:
 
   trailer:
     kind: "video"
+    delivery: "stream"  # bytes go to Cloudflare Stream, not R2
     allowed_mimes: ["video/mp4", "video/quicktime"]
-    size_max_bytes: 78643200  # 75MB
-    multipart_threshold_mb: 15
-    part_size_mb: 8
+    size_max_bytes: 78643200  # 75MB; Stream caps plain POST at 200MB and TUS at 30GB
     token_ttl_seconds: 1800
-    storage_path: "originals/trailers/{key_base}"
-    enable_sharding: false
-    proxy_folder: "proxies/trailers"
-    formats: ["mp4", "webm"]
-    quality: 80
-    max_duration_seconds: 45
+    max_duration_seconds: 45  # also passed to Stream as upload-time cap
     min_width: 1280
     min_height: 720
-    allowed_codecs: ["h264", "hevc"]
 
   default:
     # Upload configuration

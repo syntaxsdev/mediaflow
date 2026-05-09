@@ -10,18 +10,26 @@ import (
 
 	"mediaflow/internal/config"
 	"mediaflow/internal/s3"
+	"mediaflow/internal/stream"
 )
 
 type Service struct {
-	s3Client S3Client
-	config   *config.Config
+	s3Client     S3Client
+	streamClient *stream.Client
+	config       *config.Config
 }
 
 func NewService(s3Client S3Client, config *config.Config) *Service {
 	return &Service{
-		s3Client: s3Client,
-		config:   config,
+		s3Client:     s3Client,
+		streamClient: stream.NewClient(config.StreamAccountID, config.StreamAPIToken),
+		config:       config,
 	}
+}
+
+// StreamClient exposes the Stream API wrapper to handlers (probe, delete).
+func (s *Service) StreamClient() *stream.Client {
+	return s.streamClient
 }
 
 // PresignUpload generates presigned URLs for upload based on the request
@@ -34,6 +42,10 @@ func (s *Service) PresignUpload(ctx context.Context, req *PresignRequest, profil
 	// Validate file size
 	if req.SizeBytes > profile.SizeMaxBytes {
 		return nil, fmt.Errorf("file size exceeds maximum: %d > %d", req.SizeBytes, profile.SizeMaxBytes)
+	}
+
+	if profile.Delivery == "stream" {
+		return s.presignStream(ctx, req, profile)
 	}
 
 	// Generate shard only if auto-sharding is enabled
@@ -81,11 +93,11 @@ func (s *Service) isMimeAllowed(mime string, allowedMimes []string) bool {
 
 func (s *Service) buildObjectKey(template, keyBase, ext, shard string) string {
 	objectKey := template
-	
+
 	// Replace placeholders in template
 	objectKey = strings.ReplaceAll(objectKey, "{key_base}", keyBase)
 	objectKey = strings.ReplaceAll(objectKey, "{ext}", ext)
-	
+
 	// Handle optional shard
 	if shard != "" {
 		objectKey = strings.ReplaceAll(objectKey, "{shard?}", shard)
@@ -96,13 +108,13 @@ func (s *Service) buildObjectKey(template, keyBase, ext, shard string) string {
 		objectKey = strings.ReplaceAll(objectKey, "{shard?}/", "")
 		objectKey = strings.ReplaceAll(objectKey, "{shard?}", "")
 	}
-	
+
 	return objectKey
 }
 
 func (s *Service) determineStrategy(multipart string, sizeBytes int64, thresholdMB int64) string {
 	thresholdBytes := thresholdMB * 1024 * 1024
-	
+
 	switch multipart {
 	case "force":
 		return "multipart"
@@ -122,16 +134,16 @@ func (s *Service) buildRequiredHeaders(mime string) map[string]string {
 	headers := map[string]string{
 		"Content-Type": mime,
 	}
-	
+
 	// Note: Server-side encryption disabled for MinIO compatibility
 	// In production, configure proper SSE based on your storage backend
-	
+
 	return headers
 }
 
 func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey string, headers map[string]string, expiresAt time.Time, partSizeMB int64, totalSizeBytes int64, baseURL string) (*UploadDetails, error) {
 	expires := time.Until(expiresAt)
-	
+
 	if strategy == "single" {
 		// Add If-None-Match header for overwrite prevention
 		singleHeaders := make(map[string]string)
@@ -139,12 +151,12 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 			singleHeaders[k] = v
 		}
 		singleHeaders["If-None-Match"] = "*"
-		
+
 		url, err := s.s3Client.PresignPutObject(ctx, objectKey, expires, singleHeaders)
 		if err != nil {
 			return nil, err
 		}
-		
+
 		return &UploadDetails{
 			Single: &SingleUpload{
 				Method:    "PUT",
@@ -154,23 +166,23 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 			},
 		}, nil
 	}
-	
+
 	// For multipart uploads, create the multipart upload and generate part URLs
 	uploadID, err := s.s3Client.CreateMultipartUpload(ctx, objectKey, headers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create multipart upload: %w", err)
 	}
-	
+
 	// Calculate number of parts needed
 	partSizeBytes := partSizeMB * 1024 * 1024
 	numParts := int(math.Ceil(float64(totalSizeBytes) / float64(partSizeBytes)))
-	
+
 	// Generate presigned URLs for each part (limit to reasonable number)
 	maxParts := 100 // Reasonable limit for batch presigning
 	if numParts > maxParts {
 		numParts = maxParts
 	}
-	
+
 	parts := make([]PartUpload, numParts)
 	for i := 0; i < numParts; i++ {
 		partNumber := i + 1
@@ -178,7 +190,7 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 		if err != nil {
 			return nil, fmt.Errorf("failed to presign part %d: %w", partNumber, err)
 		}
-		
+
 		parts[i] = PartUpload{
 			PartNumber: partNumber,
 			Method:     "PUT",
@@ -187,15 +199,15 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 			ExpiresAt:  expiresAt,
 		}
 	}
-	
+
 	// Generate server-side URLs for complete and abort operations
 	if baseURL == "" {
 		baseURL = "http://localhost:8080" // Default fallback
 	}
-	
+
 	completeURL := fmt.Sprintf("%s/v1/uploads/%s/complete/%s", baseURL, objectKey, uploadID)
 	abortURL := fmt.Sprintf("%s/v1/uploads/%s/abort/%s", baseURL, objectKey, uploadID)
-	
+
 	return &UploadDetails{
 		Multipart: &MultipartUpload{
 			UploadID: uploadID,
@@ -227,13 +239,56 @@ func (s *Service) CompleteMultipartUpload(ctx context.Context, objectKey, upload
 			ETag:       part.ETag,
 		}
 	}
-	
+
 	return s.s3Client.CompleteMultipartUpload(ctx, objectKey, uploadID, parts)
 }
 
 // AbortMultipartUpload aborts a multipart upload
 func (s *Service) AbortMultipartUpload(ctx context.Context, objectKey, uploadID string) error {
 	return s.s3Client.AbortMultipartUpload(ctx, objectKey, uploadID)
+}
+
+// presignStream provisions a Cloudflare Stream Direct Creator Upload.
+func (s *Service) presignStream(ctx context.Context, req *PresignRequest, profile *config.Profile) (*PresignResponse, error) {
+	if !s.streamClient.Configured() {
+		return nil, fmt.Errorf("stream delivery requested but STREAM_ACCOUNT_ID/STREAM_API_TOKEN not set")
+	}
+
+	maxDur := profile.MaxDurationSeconds
+	if maxDur <= 0 {
+		// Stream requires a positive maxDurationSeconds for direct uploads;
+		// fall back to a generous cap so misconfigured profiles still work.
+		maxDur = 600
+	}
+
+	result, err := s.streamClient.CreateDirectUpload(ctx, stream.DirectUploadRequest{
+		MaxDurationSeconds: maxDur,
+		Meta: map[string]string{
+			"key_base": req.KeyBase,
+			"profile":  req.Profile,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	expiresAt := time.Now().Add(time.Duration(profile.TokenTTLSeconds) * time.Second)
+	method := "POST"
+	if req.SizeBytes > 200*1024*1024 {
+		method = "TUS"
+	}
+
+	return &PresignResponse{
+		ObjectKey: result.UID,
+		Upload: &UploadDetails{
+			Stream: &StreamUpload{
+				Method:    method,
+				URL:       result.UploadURL,
+				UID:       result.UID,
+				ExpiresAt: expiresAt,
+			},
+		},
+	}, nil
 }
 
 func (s *Service) ResolveAssetKey(profile *config.Profile, keyBase string) string {
