@@ -62,6 +62,14 @@ func (m *MockS3Client) ListByPrefix(ctx context.Context, prefix string) ([]strin
 	return nil, nil
 }
 
+func (m *MockS3Client) PresignGetObject(ctx context.Context, key string, expires time.Duration) (string, error) {
+	return "https://test.s3.amazonaws.com/bucket/" + key, nil
+}
+
+func (m *MockS3Client) HeadObject(ctx context.Context, key string) error {
+	return nil
+}
+
 func TestGenerateShard(t *testing.T) {
 	tests := []struct {
 		keyBase  string

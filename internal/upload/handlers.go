@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"mediaflow/internal/config"
+	"mediaflow/internal/probe"
 )
 
 type Handler struct {
@@ -83,7 +85,7 @@ func (h *Handler) HandlePresign(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
-	
+
 	// Generate presigned upload
 	presignResp, err := h.uploadService.PresignUpload(h.ctx, &req, profile, baseURL)
 	if err != nil {
@@ -121,7 +123,7 @@ func (h *Handler) HandleCompleteMultipart(w http.ResponseWriter, r *http.Request
 		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid URL format", "Expected /v1/uploads/{object_key}/complete/{upload_id}")
 		return
 	}
-	
+
 	objectKey := parts[0]
 	uploadID := parts[1]
 
@@ -167,7 +169,7 @@ func (h *Handler) HandleAbortMultipart(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid URL format", "Expected /v1/uploads/{object_key}/abort/{upload_id}")
 		return
 	}
-	
+
 	objectKey := parts[0]
 	uploadID := parts[1]
 
@@ -186,6 +188,19 @@ func (h *Handler) HandleAbortMultipart(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 }
 
+// RouteAssets dispatches /v1/assets/{profile}/{key_base}[/probe] to the right
+// handler based on method + suffix.
+func (h *Handler) RouteAssets(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/probe"):
+		h.HandleProbeAsset(w, r)
+	case r.Method == http.MethodDelete:
+		h.HandleDeleteAsset(w, r)
+	default:
+		h.writeError(w, http.StatusMethodNotAllowed, ErrBadRequest, "Method not allowed", "")
+	}
+}
+
 // HandleDeleteAsset handles DELETE /v1/assets/{profile}/{key_base}
 // Deletes the original file and all generated thumbnails for an asset.
 func (h *Handler) HandleDeleteAsset(w http.ResponseWriter, r *http.Request) {
@@ -194,16 +209,11 @@ func (h *Handler) HandleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract profile and key_base from URL path
-	path := strings.TrimPrefix(r.URL.Path, "/v1/assets/")
-	slashIdx := strings.Index(path, "/")
-	if slashIdx < 1 || slashIdx == len(path)-1 {
+	profileName, keyBase, ok := parseAssetPath(r.URL.Path, "")
+	if !ok {
 		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid URL format", "Expected /v1/assets/{profile}/{key_base}")
 		return
 	}
-
-	profileName := path[:slashIdx]
-	keyBase := path[slashIdx+1:]
 
 	// Look up profile config
 	profile := h.storageConfig.GetProfile(profileName)
@@ -223,12 +233,78 @@ func (h *Handler) HandleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	response := map[string]any{
-		"status":        "deleted",
-		"profile":       profileName,
-		"key_base":      keyBase,
+		"status":          "deleted",
+		"profile":         profileName,
+		"key_base":        keyBase,
 		"objects_deleted": deleted,
 	}
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// HandleProbeAsset handles POST /v1/assets/{profile}/{key_base}/probe.
+// Returns 200 for both pass and fail; `ok` is the gate, not the status code.
+func (h *Handler) HandleProbeAsset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.writeError(w, http.StatusMethodNotAllowed, ErrBadRequest, "Method not allowed", "Use POST")
+		return
+	}
+
+	profileName, keyBase, ok := parseAssetPath(r.URL.Path, "/probe")
+	if !ok {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid URL format", "Expected /v1/assets/{profile}/{key_base}/probe")
+		return
+	}
+
+	profile := h.storageConfig.GetProfile(profileName)
+	if profile == nil {
+		h.writeError(w, http.StatusNotFound, ErrBadRequest, fmt.Sprintf("Unknown profile: %s", profileName), "")
+		return
+	}
+	if profile.Kind != "video" {
+		h.writeError(w, http.StatusUnprocessableEntity, ErrBadRequest, "Probe requires kind=video", profileName)
+		return
+	}
+
+	objectKey := h.uploadService.ResolveAssetKey(profile, keyBase)
+
+	if err := h.uploadService.AssetExists(r.Context(), objectKey); err != nil {
+		h.writeError(w, http.StatusNotFound, ErrBadRequest, "Asset not found", objectKey)
+		return
+	}
+
+	presignURL, err := h.uploadService.PresignGet(r.Context(), objectKey, 120*time.Second)
+	if err != nil {
+		fmt.Printf("Probe presign error: %v\n", err)
+		h.writeError(w, http.StatusInternalServerError, ErrBadRequest, "Failed to presign GET", err.Error())
+		return
+	}
+
+	result, err := probe.Probe(r.Context(), presignURL, objectKey, profile)
+	if err != nil {
+		fmt.Printf("Probe error key=%s: %v\n", objectKey, err)
+		h.writeError(w, http.StatusBadGateway, ErrUpstream, "Probe failed", err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// parseAssetPath extracts {profile} and {key_base} from /v1/assets/{profile}/{key_base}{suffix}.
+func parseAssetPath(urlPath, suffix string) (profile, keyBase string, ok bool) {
+	path := strings.TrimPrefix(urlPath, "/v1/assets/")
+	if suffix != "" {
+		if !strings.HasSuffix(path, suffix) {
+			return "", "", false
+		}
+		path = strings.TrimSuffix(path, suffix)
+	}
+	slashIdx := strings.Index(path, "/")
+	if slashIdx < 1 || slashIdx == len(path)-1 {
+		return "", "", false
+	}
+	return path[:slashIdx], path[slashIdx+1:], true
 }
 
 // writeError writes a standardized error response

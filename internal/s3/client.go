@@ -114,6 +114,27 @@ func (c *Client) PresignPutObject(ctx context.Context, key string, expires time.
 	return request.URL, nil
 }
 
+func (c *Client) PresignGetObject(ctx context.Context, key string, expires time.Duration) (string, error) {
+	request, err := c.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = expires
+	})
+	if err != nil {
+		return "", err
+	}
+	return request.URL, nil
+}
+
+func (c *Client) HeadObject(ctx context.Context, key string) error {
+	_, err := c.s3Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
 // CreateMultipartUpload creates a multipart upload and returns the upload ID
 func (c *Client) CreateMultipartUpload(ctx context.Context, key string, headers map[string]string) (string, error) {
 	input := &s3.CreateMultipartUploadInput{
