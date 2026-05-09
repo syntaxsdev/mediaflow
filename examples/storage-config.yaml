@@ -63,11 +63,28 @@ profiles:
     token_ttl_seconds: 1800  # 30 minutes
     storage_path: "originals/videos/{shard?}/{key_base}"
     enable_sharding: true
-    
+
     # Processing configuration (future implementation)
     proxy_folder: "proxies/videos"
     formats: ["mp4", "webm"]
     quality: 80
+
+  trailer:
+    kind: "video"
+    allowed_mimes: ["video/mp4", "video/quicktime"]
+    size_max_bytes: 78643200  # 75MB
+    multipart_threshold_mb: 15
+    part_size_mb: 8
+    token_ttl_seconds: 1800
+    storage_path: "originals/trailers/{key_base}"
+    enable_sharding: false
+    proxy_folder: "proxies/trailers"
+    formats: ["mp4", "webm"]
+    quality: 80
+    max_duration_seconds: 45
+    min_width: 1280
+    min_height: 720
+    allowed_codecs: ["h264", "hevc"]
 
   default:
     # Upload configuration

@@ -236,15 +236,26 @@ func (s *Service) AbortMultipartUpload(ctx context.Context, objectKey, uploadID 
 	return s.s3Client.AbortMultipartUpload(ctx, objectKey, uploadID)
 }
 
-// DeleteAsset deletes an asset's original file and all generated thumbnails from R2.
-// It resolves the storage paths from the profile config, handling sharding if enabled.
-func (s *Service) DeleteAsset(ctx context.Context, profile *config.Profile, keyBase string) (int, error) {
-	// Build the original object key (same logic as upload)
+func (s *Service) ResolveAssetKey(profile *config.Profile, keyBase string) string {
 	shard := ""
 	if profile.EnableSharding {
 		shard = GenerateShard(keyBase)
 	}
-	originalKey := s.buildObjectKey(profile.StoragePath, keyBase, "", shard)
+	return s.buildObjectKey(profile.StoragePath, keyBase, "", shard)
+}
+
+func (s *Service) PresignGet(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {
+	return s.s3Client.PresignGetObject(ctx, objectKey, ttl)
+}
+
+func (s *Service) AssetExists(ctx context.Context, objectKey string) error {
+	return s.s3Client.HeadObject(ctx, objectKey)
+}
+
+// DeleteAsset deletes an asset's original file and all generated thumbnails from R2.
+// It resolves the storage paths from the profile config, handling sharding if enabled.
+func (s *Service) DeleteAsset(ctx context.Context, profile *config.Profile, keyBase string) (int, error) {
+	originalKey := s.ResolveAssetKey(profile, keyBase)
 
 	deleted := 0
 

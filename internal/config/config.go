@@ -69,8 +69,14 @@ type Profile struct {
 	ConvertTo   string   `yaml:"convert_to,omitempty"`
 
 	// Processing configuration (videos)
-	ProxyFolder string   `yaml:"proxy_folder,omitempty"`
-	Formats     []string `yaml:"formats,omitempty"`
+	ProxyFolder        string   `yaml:"proxy_folder,omitempty"`
+	Formats            []string `yaml:"formats,omitempty"`
+	MaxDurationSeconds int      `yaml:"max_duration_seconds,omitempty"`
+	MinWidth           int      `yaml:"min_width,omitempty"`
+	MinHeight          int      `yaml:"min_height,omitempty"`
+	MaxWidth           int      `yaml:"max_width,omitempty"`
+	MaxHeight          int      `yaml:"max_height,omitempty"`
+	AllowedCodecs      []string `yaml:"allowed_codecs,omitempty"`
 }
 
 type StorageConfig struct {

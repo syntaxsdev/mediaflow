@@ -69,8 +69,8 @@ func main() {
 		}
 	})
 
-	// Asset deletion (auth required)
-	mux.Handle("/v1/assets/", authMiddleware(http.HandlerFunc(uploadHandler.HandleDeleteAsset)))
+	// Asset operations (auth required)
+	mux.Handle("/v1/assets/", authMiddleware(http.HandlerFunc(uploadHandler.RouteAssets)))
 
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

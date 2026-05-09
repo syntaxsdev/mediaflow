@@ -111,4 +111,5 @@ const (
 	ErrStorageDenied     = "storage_denied"
 	ErrBadRequest        = "bad_request"
 	ErrRateLimited       = "rate_limited"
+	ErrUpstream          = "upstream_error"
 )

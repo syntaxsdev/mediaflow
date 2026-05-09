@@ -15,8 +15,8 @@
     
     FROM alpine:latest
     
-    # Install ca-certificates, libwebp and vips runtime (with fallback for ARM64)
-    RUN apk --no-cache add ca-certificates && \
+    # Runtime deps: ffmpeg ships ffprobe; libwebp/vips have an ARM64 fallback.
+    RUN apk --no-cache add ca-certificates ffmpeg && \
         (apk add --no-cache libwebp vips || echo "libwebp/vips not available for this platform")
     
     # Create a non-root user
