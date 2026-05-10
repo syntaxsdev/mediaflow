@@ -24,6 +24,16 @@ type PresignResponse struct {
 type UploadDetails struct {
 	Single    *SingleUpload    `json:"single,omitempty"`
 	Multipart *MultipartUpload `json:"multipart,omitempty"`
+	Stream    *StreamUpload    `json:"stream,omitempty"`
+}
+
+// StreamUpload is a one-time direct-creator-upload URL for Cloudflare Stream.
+// Client uses TUS for files >200MB, plain POST otherwise.
+type StreamUpload struct {
+	Method    string    `json:"method"`
+	URL       string    `json:"url"`
+	UID       string    `json:"uid"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // SingleUpload contains details for single PUT upload

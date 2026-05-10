@@ -3,6 +3,7 @@ package upload
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"mediaflow/internal/config"
 	"mediaflow/internal/probe"
+	"mediaflow/internal/stream"
 )
 
 type Handler struct {
@@ -222,6 +224,27 @@ func (h *Handler) HandleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if profile.Delivery == "stream" {
+		sc := h.uploadService.StreamClient()
+		if !sc.Configured() {
+			h.writeError(w, http.StatusInternalServerError, ErrBadRequest, "Stream not configured", "")
+			return
+		}
+		if err := sc.DeleteVideo(r.Context(), keyBase); err != nil {
+			fmt.Printf("Stream delete error uid=%s: %v\n", keyBase, err)
+			h.writeError(w, http.StatusBadGateway, ErrUpstream, "Stream delete failed", err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":  "deleted",
+			"profile": profileName,
+			"uid":     keyBase,
+		})
+		return
+	}
+
 	// Delete the original + thumbnails
 	deleted, err := h.uploadService.DeleteAsset(h.ctx, profile, keyBase)
 	if err != nil {
@@ -265,6 +288,11 @@ func (h *Handler) HandleProbeAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if profile.Delivery == "stream" {
+		h.handleProbeStream(w, r, profile, keyBase)
+		return
+	}
+
 	objectKey := h.uploadService.ResolveAssetKey(profile, keyBase)
 
 	if err := h.uploadService.AssetExists(r.Context(), objectKey); err != nil {
@@ -289,6 +317,79 @@ func (h *Handler) HandleProbeAsset(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+// handleProbeStream validates a Stream-delivered video by reading metadata
+// from the Stream API. key_base is the Stream UID.
+func (h *Handler) handleProbeStream(w http.ResponseWriter, r *http.Request, profile *config.Profile, uid string) {
+	sc := h.uploadService.StreamClient()
+	if !sc.Configured() {
+		h.writeError(w, http.StatusInternalServerError, ErrBadRequest, "Stream not configured", "")
+		return
+	}
+
+	details, err := sc.GetVideo(r.Context(), uid)
+	if err != nil {
+		if errors.Is(err, stream.ErrVideoNotFound) {
+			h.writeError(w, http.StatusNotFound, ErrBadRequest, "Stream video not found", uid)
+			return
+		}
+		fmt.Printf("Stream probe error uid=%s: %v\n", uid, err)
+		h.writeError(w, http.StatusBadGateway, ErrUpstream, "Stream API error", err.Error())
+		return
+	}
+
+	if !details.ReadyToStream {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":     false,
+			"ready":  false,
+			"state":  details.StatusState,
+			"reason": "video still processing",
+		})
+		return
+	}
+
+	reasons := []probe.Reason{}
+	if profile.MaxDurationSeconds > 0 && details.DurationSec > float64(profile.MaxDurationSeconds) {
+		reasons = append(reasons, probe.Reason{
+			Code: "duration_exceeded", Limit: profile.MaxDurationSeconds, Actual: details.DurationSec,
+		})
+	}
+	if profile.MinWidth > 0 && details.Width > 0 && details.Width < profile.MinWidth {
+		reasons = append(reasons, probe.Reason{
+			Code: "width_too_low", Limit: profile.MinWidth, Actual: details.Width,
+		})
+	}
+	if profile.MinHeight > 0 && details.Height > 0 && details.Height < profile.MinHeight {
+		reasons = append(reasons, probe.Reason{
+			Code: "height_too_low", Limit: profile.MinHeight, Actual: details.Height,
+		})
+	}
+	if profile.MaxWidth > 0 && details.Width > profile.MaxWidth {
+		reasons = append(reasons, probe.Reason{
+			Code: "width_too_high", Limit: profile.MaxWidth, Actual: details.Width,
+		})
+	}
+	if profile.MaxHeight > 0 && details.Height > profile.MaxHeight {
+		reasons = append(reasons, probe.Reason{
+			Code: "height_too_high", Limit: profile.MaxHeight, Actual: details.Height,
+		})
+	}
+
+	resp := map[string]any{
+		"ok":      len(reasons) == 0,
+		"ready":   true,
+		"state":   details.StatusState,
+		"uid":     details.UID,
+		"video":   map[string]any{"duration_seconds": details.DurationSec, "width": details.Width, "height": details.Height},
+		"reasons": reasons,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // parseAssetPath extracts {profile} and {key_base} from /v1/assets/{profile}/{key_base}{suffix}.

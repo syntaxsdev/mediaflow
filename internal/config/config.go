@@ -21,6 +21,9 @@ type Config struct {
 	CacheMaxAge      string
 	// API authentication
 	APIKey string
+	// Cloudflare Stream (only required for profiles with delivery: stream)
+	StreamAccountID string
+	StreamAPIToken  string
 }
 
 func Load() *Config {
@@ -43,6 +46,9 @@ func Load() *Config {
 		CacheMaxAge:      getEnv("CACHE_MAX_AGE", "86400"),
 		// API authentication
 		APIKey: getEnv("API_KEY", ""),
+		// Cloudflare Stream
+		StreamAccountID: getEnv("STREAM_ACCOUNT_ID", ""),
+		StreamAPIToken:  getEnv("STREAM_API_TOKEN", ""),
 	}
 }
 
@@ -57,6 +63,9 @@ type Profile struct {
 	TokenTTLSeconds      int64    `yaml:"token_ttl_seconds"`
 	StoragePath          string   `yaml:"storage_path"`
 	EnableSharding       bool     `yaml:"enable_sharding"`
+	// Delivery selects where uploads land. "" or "r2" → presigned R2 PUT (default).
+	// "stream" → Cloudflare Stream Direct Creator Upload; storage_path is ignored.
+	Delivery string `yaml:"delivery,omitempty"`
 
 	// Processing configuration (shared)
 	ThumbFolder   string `yaml:"thumb_folder,omitempty"`
@@ -125,9 +134,14 @@ func LoadStorageConfig(s3 *s3.Client, config *Config) (*StorageConfig, error) {
 	return &storageConfig, nil
 }
 
-// validateStorageConfig ensures all profiles have required fields
+// validateStorageConfig ensures all profiles have required fields.
+// storage_path is only required for R2-backed profiles; stream-delivered
+// profiles store bytes in Cloudflare Stream and have no R2 key.
 func validateStorageConfig(config *StorageConfig) error {
 	for profileName, profile := range config.Profiles {
+		if profile.Delivery == "stream" {
+			continue
+		}
 		if profile.StoragePath == "" {
 			return fmt.Errorf("profile '%s' is missing required 'storage_path' field", profileName)
 		}
