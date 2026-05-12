@@ -17,7 +17,7 @@ For short-form creator content (trailers, clips), Stream is the lowest-engineeri
 ## Flow
 
 ```
-client → orchestrator (e.g. barta-api)
+client → orchestrator
          └─ POST /v1/uploads/presign { profile: "trailer", ... }
             mediaflow → Stream: POST /accounts/{id}/stream/direct_upload
                                 { maxDurationSeconds: <profile.max_duration_seconds> }

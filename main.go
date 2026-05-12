@@ -72,6 +72,10 @@ func main() {
 	// Asset operations (auth required)
 	mux.Handle("/v1/assets/", authMiddleware(http.HandlerFunc(uploadHandler.RouteAssets)))
 
+	// One-time admin endpoint — register the Cloudflare Stream webhook
+	// destination. Auth-protected; run once per env at deploy time.
+	mux.Handle("/v1/stream/webhook/register", authMiddleware(http.HandlerFunc(uploadHandler.HandleStreamWebhookRegister)))
+
 	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		response.JSON("OK").Write(w)

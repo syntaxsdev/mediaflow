@@ -392,6 +392,52 @@ func (h *Handler) handleProbeStream(w http.ResponseWriter, r *http.Request, prof
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// HandleStreamWebhookRegister handles POST /v1/stream/webhook/register
+//
+// Body: {"notification_url": "https://api.../v1/webhooks/stream"}
+// Response (200): {"notification_url": "...", "secret": "...", "modified": "..."}
+//
+// One-time setup endpoint. Run once per environment after deploy to point
+// Cloudflare Stream at the destination service. The returned `secret` is
+// what Cloudflare signs webhook bodies with — the destination service
+// needs to store it to verify deliveries. PUT-to-Cloudflare is
+// idempotent; calling this again rotates the secret.
+func (h *Handler) HandleStreamWebhookRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.writeError(w, http.StatusMethodNotAllowed, ErrBadRequest, "Method not allowed", "Use POST")
+		return
+	}
+
+	var req struct {
+		NotificationURL string `json:"notification_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid JSON body", err.Error())
+		return
+	}
+	if !strings.HasPrefix(req.NotificationURL, "https://") {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "notification_url must be https://", req.NotificationURL)
+		return
+	}
+
+	sc := h.uploadService.StreamClient()
+	if !sc.Configured() {
+		h.writeError(w, http.StatusInternalServerError, ErrBadRequest, "Stream not configured", "")
+		return
+	}
+
+	cfg, err := sc.RegisterWebhook(r.Context(), req.NotificationURL)
+	if err != nil {
+		fmt.Printf("Stream register webhook error: %v\n", err)
+		h.writeError(w, http.StatusBadGateway, ErrUpstream, "Stream API error", err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(cfg)
+}
+
 // parseAssetPath extracts {profile} and {key_base} from /v1/assets/{profile}/{key_base}{suffix}.
 func parseAssetPath(urlPath, suffix string) (profile, keyBase string, ok bool) {
 	path := strings.TrimPrefix(urlPath, "/v1/assets/")
