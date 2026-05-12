@@ -24,6 +24,10 @@ type Config struct {
 	// Cloudflare Stream (only required for profiles with delivery: stream)
 	StreamAccountID string
 	StreamAPIToken  string
+	// Deployment env tag (development|staging|production). Stamped into
+	// Stream upload meta so the shared CF Stream account's single
+	// webhook can be routed back to the right destination service.
+	Environment string
 }
 
 func Load() *Config {
@@ -49,6 +53,10 @@ func Load() *Config {
 		// Cloudflare Stream
 		StreamAccountID: getEnv("STREAM_ACCOUNT_ID", ""),
 		StreamAPIToken:  getEnv("STREAM_API_TOKEN", ""),
+		// Deployment env tag — stamped into Stream `meta.env` so the
+		// shared CF Stream account's single webhook can be routed to the
+		// right destination by the stream-webhook-router worker.
+		Environment: getEnv("ENVIRONMENT", "development"),
 	}
 }
 
@@ -190,3 +198,4 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
+

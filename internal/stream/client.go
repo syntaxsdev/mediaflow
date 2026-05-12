@@ -163,6 +163,60 @@ func (c *Client) GetVideo(ctx context.Context, uid string) (*VideoDetails, error
 	}, nil
 }
 
+// WebhookConfig is the slice of Cloudflare's webhook config response we
+// expose. `Secret` is what Cloudflare signs webhook bodies with — the
+// destination service needs it to verify deliveries.
+type WebhookConfig struct {
+	NotificationURL string `json:"notification_url"`
+	Secret          string `json:"secret"`
+	Modified        string `json:"modified,omitempty"`
+}
+
+// RegisterWebhook sets (or replaces) the Stream account-level webhook
+// destination. PUT /accounts/{id}/stream/webhook is idempotent — running
+// it again with the same URL just rotates the secret.
+func (c *Client) RegisterWebhook(ctx context.Context, notificationURL string) (*WebhookConfig, error) {
+	if !c.Configured() {
+		return nil, fmt.Errorf("stream client not configured (missing STREAM_ACCOUNT_ID or STREAM_API_TOKEN)")
+	}
+
+	body, err := json.Marshal(map[string]string{"notificationUrl": notificationURL})
+	if err != nil {
+		return nil, fmt.Errorf("marshal webhook payload: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/accounts/%s/stream/webhook", apiBase, c.accountID)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiToken)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("stream register webhook: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		raw, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("stream register webhook status %d: %s", resp.StatusCode, string(raw))
+	}
+
+	var parsed struct {
+		Result  WebhookConfig `json:"result"`
+		Success bool          `json:"success"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("decode register webhook response: %w", err)
+	}
+	if !parsed.Success || parsed.Result.Secret == "" {
+		return nil, fmt.Errorf("stream register webhook returned empty result")
+	}
+	return &parsed.Result, nil
+}
+
 func (c *Client) DeleteVideo(ctx context.Context, uid string) error {
 	if !c.Configured() {
 		return fmt.Errorf("stream client not configured")

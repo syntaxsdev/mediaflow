@@ -266,6 +266,9 @@ func (s *Service) presignStream(ctx context.Context, req *PresignRequest, profil
 		Meta: map[string]string{
 			"key_base": req.KeyBase,
 			"profile":  req.Profile,
+			// Drives the stream-webhook-router worker — CF echoes this
+			// back on every webhook delivery for this video.
+			"env": s.config.Environment,
 		},
 	})
 	if err != nil {
