@@ -142,8 +142,12 @@ func (h *Handler) HandleCompleteMultipart(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Resolve the target bucket from the ?profile= the presign baked in (nil =
+	// default bucket, preserving behavior for profiles without a custom bucket).
+	profile := h.storageConfig.GetProfile(r.URL.Query().Get("profile"))
+
 	// Complete the multipart upload
-	err := h.uploadService.CompleteMultipartUpload(h.ctx, objectKey, uploadID, &req)
+	err := h.uploadService.CompleteMultipartUpload(h.ctx, profile, objectKey, uploadID, &req)
 	if err != nil {
 		fmt.Printf("Complete multipart error: %v\n", err)
 		h.writeError(w, http.StatusInternalServerError, ErrBadRequest, fmt.Sprintf("Failed to complete multipart upload: %v", err), "")
@@ -175,8 +179,11 @@ func (h *Handler) HandleAbortMultipart(w http.ResponseWriter, r *http.Request) {
 	objectKey := parts[0]
 	uploadID := parts[1]
 
+	// Resolve the target bucket from the ?profile= the presign baked in.
+	profile := h.storageConfig.GetProfile(r.URL.Query().Get("profile"))
+
 	// Abort the multipart upload
-	err := h.uploadService.AbortMultipartUpload(h.ctx, objectKey, uploadID)
+	err := h.uploadService.AbortMultipartUpload(h.ctx, profile, objectKey, uploadID)
 	if err != nil {
 		fmt.Printf("Abort multipart error: %v\n", err)
 		h.writeError(w, http.StatusInternalServerError, ErrBadRequest, fmt.Sprintf("Failed to abort multipart upload: %v", err), "")
@@ -188,6 +195,66 @@ func (h *Handler) HandleAbortMultipart(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	response := map[string]string{"status": "aborted", "upload_id": uploadID}
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// HandleDownloadPresign handles GET /v1/downloads/presign?profile=&key_base=&filename=
+//
+// Returns a short-lived presigned GET URL for a private file-kind asset. Unlike
+// the public image routes this MUST be registered with auth on GET — it gates
+// paid digital deliverables, so the caller is trusted to have
+// verified the buyer's purchase before asking for a URL.
+func (h *Handler) HandleDownloadPresign(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.writeError(w, http.StatusMethodNotAllowed, ErrBadRequest, "Method not allowed", "Use GET")
+		return
+	}
+
+	q := r.URL.Query()
+	profileName := q.Get("profile")
+	keyBase := q.Get("key_base")
+	filename := q.Get("filename")
+	if profileName == "" || keyBase == "" {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "profile and key_base are required", "")
+		return
+	}
+
+	profile := h.storageConfig.GetProfile(profileName)
+	if profile == nil {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, fmt.Sprintf("Unknown profile: %s", profileName), "")
+		return
+	}
+	// Only file-kind profiles are downloadable here; image/video assets are
+	// served (publicly) through their own routes.
+	if profile.Kind != "file" {
+		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Download presign requires a file-kind profile", profileName)
+		return
+	}
+
+	objectKey := h.uploadService.ResolveAssetKey(profile, keyBase)
+	if err := h.uploadService.AssetExists(r.Context(), profile, objectKey); err != nil {
+		h.writeError(w, http.StatusNotFound, ErrBadRequest, "Asset not found", "")
+		return
+	}
+
+	ttl := time.Duration(profile.TokenTTLSeconds) * time.Second
+	if ttl <= 0 {
+		ttl = 900 * time.Second
+	}
+
+	signedURL, err := h.uploadService.PresignDownload(r.Context(), profile, keyBase, filename, ttl)
+	if err != nil {
+		fmt.Printf("Download presign error: %v\n", err)
+		h.writeError(w, http.StatusInternalServerError, ErrBadRequest, "Failed to presign download", err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"object_key": objectKey,
+		"url":        signedURL,
+		"expires_at": time.Now().Add(ttl),
+	})
 }
 
 // RouteAssets dispatches /v1/assets/{profile}/{key_base}[/probe] to the right
@@ -295,12 +362,12 @@ func (h *Handler) HandleProbeAsset(w http.ResponseWriter, r *http.Request) {
 
 	objectKey := h.uploadService.ResolveAssetKey(profile, keyBase)
 
-	if err := h.uploadService.AssetExists(r.Context(), objectKey); err != nil {
+	if err := h.uploadService.AssetExists(r.Context(), profile, objectKey); err != nil {
 		h.writeError(w, http.StatusNotFound, ErrBadRequest, "Asset not found", objectKey)
 		return
 	}
 
-	presignURL, err := h.uploadService.PresignGet(r.Context(), objectKey, 120*time.Second)
+	presignURL, err := h.uploadService.PresignGet(r.Context(), profile, objectKey, 120*time.Second)
 	if err != nil {
 		fmt.Printf("Probe presign error: %v\n", err)
 		h.writeError(w, http.StatusInternalServerError, ErrBadRequest, "Failed to presign GET", err.Error())

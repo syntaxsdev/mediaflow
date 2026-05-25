@@ -79,7 +79,7 @@ func (h *TestHandler) HandlePresign(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 	baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
-	
+
 	// Generate presigned upload
 	presignResp, err := h.uploadService.PresignUpload(h.ctx, &req, profile, baseURL)
 	if err != nil {
@@ -115,7 +115,7 @@ func (h *TestHandler) HandleCompleteMultipart(w http.ResponseWriter, r *http.Req
 		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid URL format", "Expected /v1/uploads/{object_key}/complete/{upload_id}")
 		return
 	}
-	
+
 	objectKey := parts[0]
 	uploadID := parts[1]
 
@@ -159,7 +159,7 @@ func (h *TestHandler) HandleAbortMultipart(w http.ResponseWriter, r *http.Reques
 		h.writeError(w, http.StatusBadRequest, ErrBadRequest, "Invalid URL format", "Expected /v1/uploads/{object_key}/abort/{upload_id}")
 		return
 	}
-	
+
 	objectKey := parts[0]
 	uploadID := parts[1]
 
@@ -248,7 +248,7 @@ func TestHandler_HandlePresign_Success(t *testing.T) {
 				MultipartThresholdMB: 15,
 				PartSizeMB:           8,
 				TokenTTLSeconds:      900,
-				StoragePath:         "originals/{shard?}/{key_base}.{ext}",
+				StoragePath:          "originals/{shard?}/{key_base}.{ext}",
 				EnableSharding:       true,
 			},
 		},
@@ -309,7 +309,7 @@ func TestHandler_HandlePresign_ValidationErrors(t *testing.T) {
 				MultipartThresholdMB: 15,
 				PartSizeMB:           8,
 				TokenTTLSeconds:      900,
-				StoragePath:         "originals/{shard?}/{key_base}.{ext}",
+				StoragePath:          "originals/{shard?}/{key_base}.{ext}",
 				EnableSharding:       true,
 			},
 		},
@@ -486,7 +486,7 @@ func TestHandler_HandlePresign_ServiceErrors(t *testing.T) {
 				MultipartThresholdMB: 15,
 				PartSizeMB:           8,
 				TokenTTLSeconds:      900,
-				StoragePath:         "originals/{shard?}/{key_base}.{ext}",
+				StoragePath:          "originals/{shard?}/{key_base}.{ext}",
 				EnableSharding:       true,
 			},
 		},

@@ -2,6 +2,7 @@ package upload
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -12,11 +13,12 @@ import (
 
 // MockS3Client implements S3Client interface for testing
 type MockS3Client struct {
-	createMultipartUploadFunc  func(ctx context.Context, key string, headers map[string]string) (string, error)
-	presignPutObjectFunc       func(ctx context.Context, key string, expires time.Duration, headers map[string]string) (string, error)
-	presignUploadPartFunc      func(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error)
+	createMultipartUploadFunc   func(ctx context.Context, key string, headers map[string]string) (string, error)
+	presignPutObjectFunc        func(ctx context.Context, key string, expires time.Duration, headers map[string]string) (string, error)
+	presignUploadPartFunc       func(ctx context.Context, key, uploadID string, partNumber int32, expires time.Duration) (string, error)
 	completeMultipartUploadFunc func(ctx context.Context, key, uploadID string, parts []s3.PartInfo) error
-	abortMultipartUploadFunc   func(ctx context.Context, key, uploadID string) error
+	abortMultipartUploadFunc    func(ctx context.Context, key, uploadID string) error
+	headObjectFunc              func(ctx context.Context, key string) error
 }
 
 func (m *MockS3Client) CreateMultipartUpload(ctx context.Context, key string, headers map[string]string) (string, error) {
@@ -62,11 +64,18 @@ func (m *MockS3Client) ListByPrefix(ctx context.Context, prefix string) ([]strin
 	return nil, nil
 }
 
-func (m *MockS3Client) PresignGetObject(ctx context.Context, key string, expires time.Duration) (string, error) {
-	return "https://test.s3.amazonaws.com/bucket/" + key, nil
+func (m *MockS3Client) PresignGetObject(ctx context.Context, key string, expires time.Duration, contentDisposition string) (string, error) {
+	u := "https://test.s3.amazonaws.com/bucket/" + key
+	if contentDisposition != "" {
+		u += "?response-content-disposition=" + url.QueryEscape(contentDisposition)
+	}
+	return u, nil
 }
 
 func (m *MockS3Client) HeadObject(ctx context.Context, key string) error {
+	if m.headObjectFunc != nil {
+		return m.headObjectFunc(ctx, key)
+	}
 	return nil
 }
 
@@ -92,6 +101,82 @@ func TestGenerateShard(t *testing.T) {
 				t.Errorf("Expected 2 characters, got %d", len(result))
 			}
 		})
+	}
+}
+
+func TestService_clientForProfile(t *testing.T) {
+	def := &MockS3Client{}
+	deliverables := &MockS3Client{}
+	cfg := &config.Config{
+		S3Bucket:     "public-bucket",
+		ExtraBuckets: map[string]string{"deliverables": "private-bucket"},
+	}
+	service := NewService(def, cfg)
+	service.RegisterBucketClient("deliverables", deliverables)
+
+	cases := []struct {
+		name    string
+		profile *config.Profile
+		want    S3Client
+	}{
+		{"nil profile uses default", nil, def},
+		{"empty bucket uses default", &config.Profile{}, def},
+		{"registered bucket routes there", &config.Profile{Bucket: "deliverables"}, deliverables},
+		{"unknown bucket falls back to default", &config.Profile{Bucket: "nope"}, def},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := service.clientForProfile(tc.profile); got != tc.want {
+				t.Errorf("clientForProfile = %p, want %p", got, tc.want)
+			}
+		})
+	}
+}
+
+// A profile bound to a non-default bucket must presign against that bucket's
+// client — never the default. This is the boundary that keeps private
+// deliverables out of the public CDN bucket.
+func TestService_PresignUpload_RoutesToProfileBucket(t *testing.T) {
+	defaultUsed, privateUsed := false, false
+	defaultClient := &MockS3Client{
+		presignPutObjectFunc: func(_ context.Context, key string, _ time.Duration, _ map[string]string) (string, error) {
+			defaultUsed = true
+			return "https://default/" + key, nil
+		},
+	}
+	privateClient := &MockS3Client{
+		presignPutObjectFunc: func(_ context.Context, key string, _ time.Duration, _ map[string]string) (string, error) {
+			privateUsed = true
+			return "https://private/" + key, nil
+		},
+	}
+	cfg := &config.Config{
+		S3Bucket:     "public-bucket",
+		ExtraBuckets: map[string]string{"deliverables": "private-bucket"},
+	}
+	service := NewService(defaultClient, cfg)
+	service.RegisterBucketClient("deliverables", privateClient)
+
+	profile := &config.Profile{
+		Kind:            "file",
+		AllowedMimes:    []string{"application/pdf"},
+		SizeMaxBytes:    1 << 20,
+		TokenTTLSeconds: 900,
+		StoragePath:     "private/downloads/{key_base}",
+		Bucket:          "deliverables",
+	}
+	req := &PresignRequest{
+		KeyBase: "abc", Ext: "pdf", Mime: "application/pdf",
+		SizeBytes: 100, Kind: "file", Profile: "download", Multipart: "off",
+	}
+	if _, err := service.PresignUpload(context.Background(), req, profile, "https://api"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !privateUsed {
+		t.Error("expected the deliverables bucket client to be used")
+	}
+	if defaultUsed {
+		t.Error("default (public) client must not be used for a deliverables profile")
 	}
 }
 
@@ -505,7 +590,7 @@ func TestService_PresignUpload_MultipartStrategy(t *testing.T) {
 		if result.Upload.Multipart.Complete.Method != "POST" {
 			t.Errorf("Expected complete method to be POST, got %s", result.Upload.Multipart.Complete.Method)
 		}
-		expectedCompleteURL := "https://test-api.com/v1/uploads/originals/test-video.mp4/complete/test-upload-id"
+		expectedCompleteURL := "https://test-api.com/v1/uploads/originals/test-video.mp4/complete/test-upload-id?profile=video"
 		if result.Upload.Multipart.Complete.URL != expectedCompleteURL {
 			t.Errorf("Expected complete URL '%s', got '%s'", expectedCompleteURL, result.Upload.Multipart.Complete.URL)
 		}
@@ -517,7 +602,7 @@ func TestService_PresignUpload_MultipartStrategy(t *testing.T) {
 		if result.Upload.Multipart.Abort.Method != "DELETE" {
 			t.Errorf("Expected abort method to be DELETE, got %s", result.Upload.Multipart.Abort.Method)
 		}
-		expectedAbortURL := "https://test-api.com/v1/uploads/originals/test-video.mp4/abort/test-upload-id"
+		expectedAbortURL := "https://test-api.com/v1/uploads/originals/test-video.mp4/abort/test-upload-id?profile=video"
 		if result.Upload.Multipart.Abort.URL != expectedAbortURL {
 			t.Errorf("Expected abort URL '%s', got '%s'", expectedAbortURL, result.Upload.Multipart.Abort.URL)
 		}
@@ -553,7 +638,7 @@ func TestService_CompleteMultipartUpload(t *testing.T) {
 	}
 	
 	ctx := context.Background()
-	err := service.CompleteMultipartUpload(ctx, "test-object-key", "test-upload-id", request)
+	err := service.CompleteMultipartUpload(ctx, nil, "test-object-key", "test-upload-id", request)
 	
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -596,7 +681,7 @@ func TestService_AbortMultipartUpload(t *testing.T) {
 	service := NewService(mockS3, cfg)
 	
 	ctx := context.Background()
-	err := service.AbortMultipartUpload(ctx, "test-object-key", "test-upload-id")
+	err := service.AbortMultipartUpload(ctx, nil, "test-object-key", "test-upload-id")
 	
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)

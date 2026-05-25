@@ -8,7 +8,7 @@ type PresignRequest struct {
 	Ext       string `json:"ext" validate:"required"`
 	Mime      string `json:"mime" validate:"required"`
 	SizeBytes int64  `json:"size_bytes" validate:"required,min=1"`
-	Kind      string `json:"kind" validate:"required,oneof=image video"`
+	Kind      string `json:"kind" validate:"required,oneof=image video file"`
 	Profile   string `json:"profile" validate:"required"`
 	Multipart string `json:"multipart" validate:"oneof=auto force off"`
 	Shard     string `json:"shard,omitempty"`

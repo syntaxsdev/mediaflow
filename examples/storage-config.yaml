@@ -79,6 +79,28 @@ profiles:
     min_width: 1280
     min_height: 720
 
+  download:
+    # Private digital deliverables. Served only via /v1/downloads/presign
+    # (auth-gated) — never through the public image routes.
+    #
+    # If your default bucket is exposed by a public CDN domain, store these in a
+    # separate private bucket (no public domain): set `bucket: deliverables`
+    # below and `S3_BUCKET_DELIVERABLES=<bucket>` in the environment. Unset, it
+    # uses the default S3_BUCKET.
+    # bucket: "deliverables"
+    kind: "file"
+    allowed_mimes: [
+      "application/pdf", "application/zip", "application/epub+zip",
+      "application/octet-stream", "image/png", "image/jpeg", "image/svg+xml",
+      "audio/mpeg", "audio/wav", "video/mp4", "application/postscript",
+    ]
+    size_max_bytes: 524288000  # 500MB
+    multipart_threshold_mb: 50
+    part_size_mb: 16
+    token_ttl_seconds: 900  # 15 minutes
+    storage_path: "private/downloads/{key_base}"
+    enable_sharding: false
+
   default:
     # Upload configuration
     kind: "image"

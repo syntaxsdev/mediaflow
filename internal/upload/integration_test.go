@@ -21,7 +21,7 @@ func TestUploadIntegration_WithAuth(t *testing.T) {
 	cfg := &config.Config{
 		APIKey: "test-api-key",
 	}
-	
+
 	storageConfig := &config.StorageConfig{
 		Profiles: map[string]config.Profile{
 			"avatar": {
@@ -29,10 +29,10 @@ func TestUploadIntegration_WithAuth(t *testing.T) {
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
 				SizeMaxBytes:         5 * 1024 * 1024,
 				MultipartThresholdMB: 15,
-				PartSizeMB:          8,
-				TokenTTLSeconds:     900,
-				StoragePath:        "originals/{shard?}/{key_base}.{ext}",
-				EnableSharding:      true,
+				PartSizeMB:           8,
+				TokenTTLSeconds:      900,
+				StoragePath:          "originals/{shard?}/{key_base}.{ext}",
+				EnableSharding:       true,
 			},
 		},
 	}
@@ -58,7 +58,7 @@ func TestUploadIntegration_WithAuth(t *testing.T) {
 	handler := &TestHandler{
 		uploadService: mockService,
 		storageConfig: storageConfig,
-		ctx:          context.Background(),
+		ctx:           context.Background(),
 	}
 
 	// Wrap with auth middleware
@@ -190,7 +190,7 @@ func TestUploadIntegration_ValidationFlow(t *testing.T) {
 	cfg := &config.Config{
 		APIKey: "test-api-key",
 	}
-	
+
 	storageConfig := &config.StorageConfig{
 		Profiles: map[string]config.Profile{
 			"avatar": {
@@ -198,10 +198,10 @@ func TestUploadIntegration_ValidationFlow(t *testing.T) {
 				AllowedMimes:         []string{"image/jpeg", "image/png"},
 				SizeMaxBytes:         1024 * 1024, // 1MB limit for testing
 				MultipartThresholdMB: 15,
-				PartSizeMB:          8,
-				TokenTTLSeconds:     900,
-				StoragePath:        "originals/{shard?}/{key_base}.{ext}",
-				EnableSharding:      true,
+				PartSizeMB:           8,
+				TokenTTLSeconds:      900,
+				StoragePath:          "originals/{shard?}/{key_base}.{ext}",
+				EnableSharding:       true,
 			},
 		},
 	}
@@ -212,13 +212,13 @@ func TestUploadIntegration_ValidationFlow(t *testing.T) {
 			return "https://test.s3.amazonaws.com/bucket/" + key, nil
 		},
 	}
-	
+
 	realService := NewService(mockS3, &config.Config{S3Bucket: "test-bucket"})
 
 	handler := &Handler{
 		uploadService: realService,
 		storageConfig: storageConfig,
-		ctx:          context.Background(),
+		ctx:           context.Background(),
 	}
 
 	// Wrap with auth middleware
@@ -345,18 +345,18 @@ func TestUploadIntegration_MultipartStrategy(t *testing.T) {
 	cfg := &config.Config{
 		APIKey: "test-api-key",
 	}
-	
+
 	storageConfig := &config.StorageConfig{
 		Profiles: map[string]config.Profile{
 			"video": {
 				Kind:                 "video",
 				AllowedMimes:         []string{"video/mp4"},
 				SizeMaxBytes:         100 * 1024 * 1024, // 100MB
-				MultipartThresholdMB: 15,               // 15MB threshold
-				PartSizeMB:          8,                  // 8MB parts
-				TokenTTLSeconds:     900,
-				StoragePath:        "originals/{shard?}/{key_base}.{ext}",
-				EnableSharding:      true,
+				MultipartThresholdMB: 15,                // 15MB threshold
+				PartSizeMB:           8,                 // 8MB parts
+				TokenTTLSeconds:      900,
+				StoragePath:          "originals/{shard?}/{key_base}.{ext}",
+				EnableSharding:       true,
 			},
 		},
 	}
@@ -370,13 +370,13 @@ func TestUploadIntegration_MultipartStrategy(t *testing.T) {
 			return "https://test.s3.amazonaws.com/bucket/" + key + "?partNumber=" + string(rune(partNumber+'0')), nil
 		},
 	}
-	
+
 	realService := NewService(mockS3, &config.Config{S3Bucket: "test-bucket"})
 
 	handler := &Handler{
 		uploadService: realService,
 		storageConfig: storageConfig,
-		ctx:          context.Background(),
+		ctx:           context.Background(),
 	}
 
 	// Wrap with auth middleware
@@ -472,7 +472,7 @@ func TestUploadIntegration_CompleteMultipartFlow(t *testing.T) {
 	cfg := &config.Config{
 		APIKey: "test-api-key",
 	}
-	
+
 	storageConfig := &config.StorageConfig{
 		Profiles: map[string]config.Profile{
 			"video": {
@@ -480,10 +480,10 @@ func TestUploadIntegration_CompleteMultipartFlow(t *testing.T) {
 				AllowedMimes:         []string{"video/mp4"},
 				SizeMaxBytes:         100 * 1024 * 1024,
 				MultipartThresholdMB: 15,
-				PartSizeMB:          8,
-				TokenTTLSeconds:     900,
-				StoragePath:        "originals/{key_base}.{ext}",
-				EnableSharding:      false,
+				PartSizeMB:           8,
+				TokenTTLSeconds:      900,
+				StoragePath:          "originals/{key_base}.{ext}",
+				EnableSharding:       false,
 			},
 		},
 	}
@@ -510,19 +510,19 @@ func TestUploadIntegration_CompleteMultipartFlow(t *testing.T) {
 			return nil
 		},
 	}
-	
+
 	realService := NewService(mockS3, &config.Config{S3Bucket: "test-bucket"})
 
 	handler := &Handler{
 		uploadService: realService,
 		storageConfig: storageConfig,
-		ctx:          context.Background(),
+		ctx:           context.Background(),
 	}
 
 	// Wrap with auth middleware
 	authConfig := &auth.Config{APIKey: cfg.APIKey}
 	middleware := auth.APIKeyMiddleware(authConfig)
-	
+
 	// Test complete multipart upload
 	requestBody := CompleteMultipartRequest{
 		Parts: []CompletedPart{
@@ -577,19 +577,19 @@ func TestUploadIntegration_AbortMultipartFlow(t *testing.T) {
 			return nil
 		},
 	}
-	
+
 	realService := NewService(mockS3, &config.Config{S3Bucket: "test-bucket"})
 
 	handler := &Handler{
 		uploadService: realService,
 		storageConfig: &config.StorageConfig{},
-		ctx:          context.Background(),
+		ctx:           context.Background(),
 	}
 
 	// Wrap with auth middleware
 	authConfig := &auth.Config{APIKey: cfg.APIKey}
 	middleware := auth.APIKeyMiddleware(authConfig)
-	
+
 	req := httptest.NewRequest("DELETE", "/v1/uploads/originals/test-video.mp4/abort/test-upload-id", nil)
 	req.Header.Set("Authorization", "Bearer test-api-key")
 
@@ -627,12 +627,12 @@ func TestUploadIntegration_CompleteMultipartAuth(t *testing.T) {
 	handler := &Handler{
 		uploadService: realService,
 		storageConfig: &config.StorageConfig{},
-		ctx:          context.Background(),
+		ctx:           context.Background(),
 	}
 
 	authConfig := &auth.Config{APIKey: cfg.APIKey}
 	middleware := auth.APIKeyMiddleware(authConfig)
-	
+
 	requestBody := CompleteMultipartRequest{
 		Parts: []CompletedPart{{PartNumber: 1, ETag: "etag1"}},
 	}
@@ -664,7 +664,7 @@ func TestUploadIntegration_CompleteMultipartAuth(t *testing.T) {
 			body, _ := json.Marshal(requestBody)
 			req := httptest.NewRequest("POST", "/v1/uploads/originals/test-video.mp4/complete/test-upload-id", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
-			
+
 			if tt.authHeader != "" {
 				req.Header.Set("Authorization", tt.authHeader)
 			}

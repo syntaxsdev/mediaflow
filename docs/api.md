@@ -29,7 +29,7 @@ Generates a presigned URL for direct upload — to S3/R2 by default, or directly
 | `ext` | File extension (used in `storage_path` template). |
 | `mime` | Validated against profile `allowed_mimes`. |
 | `size_bytes` | Validated against profile `size_max_bytes`. For Stream, also chooses POST (≤200MB) vs TUS. |
-| `kind` | `image` or `video`. Must match the profile's `kind`. |
+| `kind` | `image`, `video`, or `file`. Must match the profile's `kind`. |
 | `profile` | Name from `storage-config.yaml`. |
 | `multipart` | `auto` / `force` / `off`. Ignored for Stream delivery. |
 
@@ -201,6 +201,35 @@ GET /originals/{type}/{image_id}
 ```
 
 Serves the original from storage.
+
+## Download URL (Private Files)
+
+```
+GET /v1/downloads/presign?profile={profile}&key_base={key_base}&filename={filename}
+```
+
+Returns a short-lived presigned **GET** URL for a private `kind: file` asset. Unlike `/thumb` and `/originals` (which serve public reads), this endpoint **requires `API_KEY`** even though it is a GET — it gates private files, so the calling service is expected to authorize the request before asking for a URL. The `file`-kind profile should live in a bucket with no public domain (see [Multiple buckets](configuration.md#multiple-buckets)).
+
+**Query parameters:**
+
+| Param | Notes |
+|---|---|
+| `profile` | Must be a `kind: file` profile (else `400`). |
+| `key_base` | Asset identifier, resolved through the profile's `storage_path`. |
+| `filename` | *Optional.* Sets `Content-Disposition` so the browser saves the file under this name. |
+
+**Response:**
+```json
+{
+  "object_key": "downloads/unique-file-id",
+  "url": "https://presigned-s3-url?...&response-content-disposition=attachment%3B%20filename%3D...",
+  "expires_at": "2024-01-01T12:15:00Z"
+}
+```
+
+The client then issues a plain `GET` to `url` to download the bytes; the URL is valid for the profile's `token_ttl_seconds`.
+
+**Status codes:** `400` (missing params or non-`file` profile), `404` (object not found), `405` (non-GET method).
 
 ## Health Check
 

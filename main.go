@@ -45,6 +45,13 @@ func main() {
 
 	// Setup upload service and handlers
 	uploadService := upload.NewService(imageService.S3Client, cfg)
+	// Register per-profile buckets (from S3_BUCKET_<NAME> env vars). Lets a
+	// profile store private assets in a bucket with no public domain while the
+	// default bucket stays CDN-backed. All buckets share the same credentials.
+	for logical, bucketName := range cfg.ExtraBuckets {
+		uploadService.RegisterBucketClient(logical, imageService.S3Client.WithBucket(bucketName))
+		log.Printf("Registered bucket %q -> %s", logical, bucketName)
+	}
 	uploadHandler := upload.NewHandler(ctx, uploadService, storageConfig)
 
 	// Setup authentication middleware
@@ -71,6 +78,9 @@ func main() {
 
 	// Asset operations (auth required)
 	mux.Handle("/v1/assets/", authMiddleware(http.HandlerFunc(uploadHandler.RouteAssets)))
+
+	// Download presign for private file-kind assets. Wrapped directly with
+	mux.Handle("/v1/downloads/presign", authMiddleware(http.HandlerFunc(uploadHandler.HandleDownloadPresign)))
 
 	// One-time admin endpoint — register the Cloudflare Stream webhook
 	// destination. Auth-protected; run once per env at deploy time.

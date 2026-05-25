@@ -2,7 +2,6 @@
 // resulting metadata against a profile's constraint fields.
 package probe
 
-
 import (
 	"context"
 	"encoding/json"

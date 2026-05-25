@@ -24,7 +24,7 @@ func TestPartInfo_Struct(t *testing.T) {
 func TestClient_CompleteMultipartUpload_Interface(t *testing.T) {
 	// Test that CompleteMultipartUpload method exists and has correct signature
 	// This is a compilation test to ensure the interface is correct
-	
+
 	// We can't easily test the actual AWS S3 calls without mocking or integration tests,
 	// but we can verify the method signature compiles correctly
 	var client *Client
@@ -34,7 +34,7 @@ func TestClient_CompleteMultipartUpload_Interface(t *testing.T) {
 			{ETag: "etag1", PartNumber: 1},
 			{ETag: "etag2", PartNumber: 2},
 		}
-		
+
 		// This should compile without errors
 		_ = client.CompleteMultipartUpload(ctx, "test-key", "test-upload-id", parts)
 	}
@@ -43,11 +43,11 @@ func TestClient_CompleteMultipartUpload_Interface(t *testing.T) {
 func TestClient_AbortMultipartUpload_Interface(t *testing.T) {
 	// Test that AbortMultipartUpload method exists and has correct signature
 	// This is a compilation test to ensure the interface is correct
-	
+
 	var client *Client
 	if client != nil {
 		ctx := context.Background()
-		
+
 		// This should compile without errors
 		_ = client.AbortMultipartUpload(ctx, "test-key", "test-upload-id")
 	}

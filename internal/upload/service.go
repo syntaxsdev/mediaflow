@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"math"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,17 +15,37 @@ import (
 )
 
 type Service struct {
-	s3Client     S3Client
-	streamClient *stream.Client
-	config       *config.Config
+	s3Client      S3Client
+	bucketClients map[string]S3Client // logical bucket name -> client
+	streamClient  *stream.Client
+	config        *config.Config
 }
 
 func NewService(s3Client S3Client, config *config.Config) *Service {
 	return &Service{
-		s3Client:     s3Client,
-		streamClient: stream.NewClient(config.StreamAccountID, config.StreamAPIToken),
-		config:       config,
+		s3Client:      s3Client,
+		bucketClients: map[string]S3Client{},
+		streamClient:  stream.NewClient(config.StreamAccountID, config.StreamAPIToken),
+		config:        config,
 	}
+}
+
+// RegisterBucketClient binds a logical bucket name (see S3_BUCKET_<NAME>) to a
+// bucket-scoped client. Profiles with that `bucket:` use it instead of default.
+func (s *Service) RegisterBucketClient(logicalName string, client S3Client) {
+	s.bucketClients[logicalName] = client
+}
+
+// clientForProfile returns the S3 client for a profile's bucket, falling back
+// to the default bucket when the profile names none (or nil).
+func (s *Service) clientForProfile(profile *config.Profile) S3Client {
+	if profile == nil || profile.Bucket == "" {
+		return s.s3Client
+	}
+	if cl, ok := s.bucketClients[profile.Bucket]; ok {
+		return cl
+	}
+	return s.s3Client
 }
 
 // StreamClient exposes the Stream API wrapper to handlers (probe, delete).
@@ -67,9 +88,10 @@ func (s *Service) PresignUpload(ctx context.Context, req *PresignRequest, profil
 	// Create required headers
 	headers := s.buildRequiredHeaders(req.Mime)
 
-	// Create presigned URLs based on strategy
+	// Create presigned URLs based on strategy, scoped to the profile's bucket.
+	cl := s.clientForProfile(profile)
 	expiresAt := time.Now().Add(time.Duration(profile.TokenTTLSeconds) * time.Second)
-	uploadDetails, err := s.createUploadDetails(ctx, strategy, objectKey, headers, expiresAt, profile.PartSizeMB, req.SizeBytes, baseURL)
+	uploadDetails, err := s.createUploadDetails(ctx, cl, strategy, objectKey, req.Profile, headers, expiresAt, profile.PartSizeMB, req.SizeBytes, baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upload details: %w", err)
 	}
@@ -141,7 +163,7 @@ func (s *Service) buildRequiredHeaders(mime string) map[string]string {
 	return headers
 }
 
-func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey string, headers map[string]string, expiresAt time.Time, partSizeMB int64, totalSizeBytes int64, baseURL string) (*UploadDetails, error) {
+func (s *Service) createUploadDetails(ctx context.Context, cl S3Client, strategy, objectKey, profileName string, headers map[string]string, expiresAt time.Time, partSizeMB int64, totalSizeBytes int64, baseURL string) (*UploadDetails, error) {
 	expires := time.Until(expiresAt)
 
 	if strategy == "single" {
@@ -152,7 +174,7 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 		}
 		singleHeaders["If-None-Match"] = "*"
 
-		url, err := s.s3Client.PresignPutObject(ctx, objectKey, expires, singleHeaders)
+		url, err := cl.PresignPutObject(ctx, objectKey, expires, singleHeaders)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +190,7 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 	}
 
 	// For multipart uploads, create the multipart upload and generate part URLs
-	uploadID, err := s.s3Client.CreateMultipartUpload(ctx, objectKey, headers)
+	uploadID, err := cl.CreateMultipartUpload(ctx, objectKey, headers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create multipart upload: %w", err)
 	}
@@ -186,7 +208,7 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 	parts := make([]PartUpload, numParts)
 	for i := 0; i < numParts; i++ {
 		partNumber := i + 1
-		partURL, err := s.s3Client.PresignUploadPart(ctx, objectKey, uploadID, int32(partNumber), expires)
+		partURL, err := cl.PresignUploadPart(ctx, objectKey, uploadID, int32(partNumber), expires)
 		if err != nil {
 			return nil, fmt.Errorf("failed to presign part %d: %w", partNumber, err)
 		}
@@ -205,8 +227,14 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 		baseURL = "http://localhost:8080" // Default fallback
 	}
 
-	completeURL := fmt.Sprintf("%s/v1/uploads/%s/complete/%s", baseURL, objectKey, uploadID)
-	abortURL := fmt.Sprintf("%s/v1/uploads/%s/abort/%s", baseURL, objectKey, uploadID)
+	// Carry the profile on the complete/abort URLs so those detached calls can
+	// re-resolve the target bucket (a non-default bucket would otherwise be lost).
+	q := ""
+	if profileName != "" {
+		q = "?profile=" + url.QueryEscape(profileName)
+	}
+	completeURL := fmt.Sprintf("%s/v1/uploads/%s/complete/%s%s", baseURL, objectKey, uploadID, q)
+	abortURL := fmt.Sprintf("%s/v1/uploads/%s/abort/%s%s", baseURL, objectKey, uploadID, q)
 
 	return &UploadDetails{
 		Multipart: &MultipartUpload{
@@ -229,8 +257,9 @@ func (s *Service) createUploadDetails(ctx context.Context, strategy, objectKey s
 	}, nil
 }
 
-// CompleteMultipartUpload completes a multipart upload
-func (s *Service) CompleteMultipartUpload(ctx context.Context, objectKey, uploadID string, req *CompleteMultipartRequest) error {
+// CompleteMultipartUpload completes a multipart upload. profile may be nil
+// (default bucket); a non-nil profile routes to its configured bucket.
+func (s *Service) CompleteMultipartUpload(ctx context.Context, profile *config.Profile, objectKey, uploadID string, req *CompleteMultipartRequest) error {
 	// Convert request parts to s3.PartInfo
 	parts := make([]s3.PartInfo, len(req.Parts))
 	for i, part := range req.Parts {
@@ -240,12 +269,12 @@ func (s *Service) CompleteMultipartUpload(ctx context.Context, objectKey, upload
 		}
 	}
 
-	return s.s3Client.CompleteMultipartUpload(ctx, objectKey, uploadID, parts)
+	return s.clientForProfile(profile).CompleteMultipartUpload(ctx, objectKey, uploadID, parts)
 }
 
-// AbortMultipartUpload aborts a multipart upload
-func (s *Service) AbortMultipartUpload(ctx context.Context, objectKey, uploadID string) error {
-	return s.s3Client.AbortMultipartUpload(ctx, objectKey, uploadID)
+// AbortMultipartUpload aborts a multipart upload. profile may be nil.
+func (s *Service) AbortMultipartUpload(ctx context.Context, profile *config.Profile, objectKey, uploadID string) error {
+	return s.clientForProfile(profile).AbortMultipartUpload(ctx, objectKey, uploadID)
 }
 
 // presignStream provisions a Cloudflare Stream Direct Creator Upload.
@@ -302,23 +331,49 @@ func (s *Service) ResolveAssetKey(profile *config.Profile, keyBase string) strin
 	return s.buildObjectKey(profile.StoragePath, keyBase, "", shard)
 }
 
-func (s *Service) PresignGet(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {
-	return s.s3Client.PresignGetObject(ctx, objectKey, ttl)
+// PresignGet returns a presigned GET URL for an object in the profile's bucket.
+func (s *Service) PresignGet(ctx context.Context, profile *config.Profile, objectKey string, ttl time.Duration) (string, error) {
+	return s.clientForProfile(profile).PresignGetObject(ctx, objectKey, ttl, "")
 }
 
-func (s *Service) AssetExists(ctx context.Context, objectKey string) error {
-	return s.s3Client.HeadObject(ctx, objectKey)
+// PresignDownload resolves the object key for a file-kind profile and returns a
+// presigned GET URL (from the profile's bucket) that forces a download with the
+// given filename.
+func (s *Service) PresignDownload(ctx context.Context, profile *config.Profile, keyBase, filename string, ttl time.Duration) (string, error) {
+	objectKey := s.ResolveAssetKey(profile, keyBase)
+	return s.clientForProfile(profile).PresignGetObject(ctx, objectKey, ttl, contentDisposition(filename))
 }
 
-// DeleteAsset deletes an asset's original file and all generated thumbnails from R2.
-// It resolves the storage paths from the profile config, handling sharding if enabled.
+// contentDisposition builds an attachment header. The ASCII fallback is
+// sanitized to prevent header injection; filename* carries the UTF-8 original.
+func contentDisposition(filename string) string {
+	if filename == "" {
+		return "attachment"
+	}
+	ascii := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || r == '"' || r == '\\' || r == '/' {
+			return '_'
+		}
+		return r
+	}, filename)
+	return fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", ascii, url.PathEscape(filename))
+}
+
+func (s *Service) AssetExists(ctx context.Context, profile *config.Profile, objectKey string) error {
+	return s.clientForProfile(profile).HeadObject(ctx, objectKey)
+}
+
+// DeleteAsset deletes an asset's original file and all generated thumbnails from
+// the profile's bucket. It resolves the storage paths from the profile config,
+// handling sharding if enabled.
 func (s *Service) DeleteAsset(ctx context.Context, profile *config.Profile, keyBase string) (int, error) {
+	cl := s.clientForProfile(profile)
 	originalKey := s.ResolveAssetKey(profile, keyBase)
 
 	deleted := 0
 
 	// Delete the original file
-	if err := s.s3Client.DeleteObject(ctx, originalKey); err != nil {
+	if err := cl.DeleteObject(ctx, originalKey); err != nil {
 		return 0, fmt.Errorf("failed to delete original %s: %w", originalKey, err)
 	}
 	deleted++
@@ -326,13 +381,13 @@ func (s *Service) DeleteAsset(ctx context.Context, profile *config.Profile, keyB
 	// Delete thumbnails if the profile has a thumb_folder
 	if profile.ThumbFolder != "" {
 		thumbPrefix := fmt.Sprintf("%s/%s", profile.ThumbFolder, keyBase)
-		thumbKeys, err := s.s3Client.ListByPrefix(ctx, thumbPrefix)
+		thumbKeys, err := cl.ListByPrefix(ctx, thumbPrefix)
 		if err != nil {
 			// Non-fatal: original is deleted, thumbs may not exist
 			return deleted, nil
 		}
 		for _, key := range thumbKeys {
-			if err := s.s3Client.DeleteObject(ctx, key); err == nil {
+			if err := cl.DeleteObject(ctx, key); err == nil {
 				deleted++
 			}
 		}

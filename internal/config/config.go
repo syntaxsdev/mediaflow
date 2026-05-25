@@ -28,6 +28,13 @@ type Config struct {
 	// Stream upload meta so the shared CF Stream account's single
 	// webhook can be routed back to the right destination service.
 	Environment string
+	// ExtraBuckets maps a logical bucket name (lowercased) to a real bucket
+	// name, loaded from S3_BUCKET_<NAME> env vars. A profile opts into one via
+	// its `bucket:` field; everything else uses the default S3Bucket. This lets
+	// private profiles live in a bucket with no public access (no CDN domain)
+	// while public assets stay in the default bucket — without code changes to
+	// add more buckets.
+	ExtraBuckets map[string]string
 }
 
 func Load() *Config {
@@ -56,8 +63,31 @@ func Load() *Config {
 		// Deployment env tag — stamped into Stream `meta.env` so the
 		// shared CF Stream account's single webhook can be routed to the
 		// right destination by the stream-webhook-router worker.
-		Environment: getEnv("ENVIRONMENT", "development"),
+		Environment:  getEnv("ENVIRONMENT", "development"),
+		ExtraBuckets: loadExtraBuckets(),
 	}
+}
+
+// loadExtraBuckets scans the environment for S3_BUCKET_<NAME> variables and maps
+// the lowercased <NAME> to the bucket value. e.g. S3_BUCKET_DELIVERABLES=foo
+// yields {"deliverables": "foo"}. The plain S3_BUCKET (default) is excluded.
+func loadExtraBuckets() map[string]string {
+	const prefix = "S3_BUCKET_"
+	out := map[string]string{}
+	for _, kv := range os.Environ() {
+		eq := strings.IndexByte(kv, '=')
+		if eq < 0 {
+			continue
+		}
+		key, val := kv[:eq], kv[eq+1:]
+		if val == "" || !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		if name := strings.ToLower(strings.TrimPrefix(key, prefix)); name != "" {
+			out[name] = val
+		}
+	}
+	return out
 }
 
 // Profile combines upload and processing configuration
@@ -71,6 +101,9 @@ type Profile struct {
 	TokenTTLSeconds      int64    `yaml:"token_ttl_seconds"`
 	StoragePath          string   `yaml:"storage_path"`
 	EnableSharding       bool     `yaml:"enable_sharding"`
+	// Bucket is a logical bucket name resolved against S3_BUCKET_<NAME> env
+	// vars. Empty means the default S3_BUCKET.
+	Bucket string `yaml:"bucket,omitempty"`
 	// Delivery selects where uploads land. "" or "r2" → presigned R2 PUT (default).
 	// "stream" → Cloudflare Stream Direct Creator Upload; storage_path is ignored.
 	Delivery string `yaml:"delivery,omitempty"`
@@ -139,6 +172,21 @@ func LoadStorageConfig(s3 *s3.Client, config *Config) (*StorageConfig, error) {
 		return nil, err
 	}
 
+	// Validate that every profile bucket reference resolves to a configured
+	// S3_BUCKET_<NAME> env var — fail fast rather than silently writing to the
+	// default bucket.
+	for name, profile := range storageConfig.Profiles {
+		if profile.Bucket == "" {
+			continue
+		}
+		if _, ok := config.ExtraBuckets[profile.Bucket]; !ok {
+			return nil, fmt.Errorf(
+				"profile '%s' references unknown bucket '%s'; set S3_BUCKET_%s",
+				name, profile.Bucket, strings.ToUpper(profile.Bucket),
+			)
+		}
+	}
+
 	return &storageConfig, nil
 }
 
@@ -198,4 +246,3 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-

@@ -99,13 +99,13 @@ func (c *Client) CreateDirectUpload(ctx context.Context, req DirectUploadRequest
 
 // VideoDetails is the slice of GET /stream/{uid} we need for post-upload validation.
 type VideoDetails struct {
-	UID            string
-	ReadyToStream  bool
-	StatusState    string
-	DurationSec    float64
-	Width          int
-	Height         int
-	InputCodec     string
+	UID           string
+	ReadyToStream bool
+	StatusState   string
+	DurationSec   float64
+	Width         int
+	Height        int
+	InputCodec    string
 }
 
 func (c *Client) GetVideo(ctx context.Context, uid string) (*VideoDetails, error) {

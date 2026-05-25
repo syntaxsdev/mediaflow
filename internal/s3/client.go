@@ -69,6 +69,13 @@ func NewClient(ctx context.Context, region, bucket, accessKey, secretKey, endpoi
 	}, nil
 }
 
+// WithBucket returns a shallow copy scoped to a different bucket
+func (c *Client) WithBucket(bucket string) *Client {
+	clone := *c
+	clone.bucket = bucket
+	return &clone
+}
+
 func (c *Client) GetObject(ctx context.Context, key string) ([]byte, error) {
 	result, err := c.s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(c.bucket),
@@ -114,11 +121,18 @@ func (c *Client) PresignPutObject(ctx context.Context, key string, expires time.
 	return request.URL, nil
 }
 
-func (c *Client) PresignGetObject(ctx context.Context, key string, expires time.Duration) (string, error) {
-	request, err := c.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+// PresignGetObject generates a presigned URL for GET operations. A non-empty
+// contentDisposition is returned to the client via response-content-disposition,
+// which forces a download with the intended filename.
+func (c *Client) PresignGetObject(ctx context.Context, key string, expires time.Duration, contentDisposition string) (string, error) {
+	input := &s3.GetObjectInput{
 		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
-	}, func(opts *s3.PresignOptions) {
+	}
+	if contentDisposition != "" {
+		input.ResponseContentDisposition = aws.String(contentDisposition)
+	}
+	request, err := c.presigner.PresignGetObject(ctx, input, func(opts *s3.PresignOptions) {
 		opts.Expires = expires
 	})
 	if err != nil {

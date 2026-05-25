@@ -70,6 +70,11 @@ func (h *ImageAPI) HandleThumbnailType(w http.ResponseWriter, r *http.Request, i
 		response.JSON(fmt.Sprintf("Profile '%s' not found", thumbType)).WriteError(w, http.StatusNotFound)
 		return
 	}
+	// Private file-kind assets are never served through the public image route.
+	if profile.Kind == "file" {
+		response.JSON("Not found").WriteError(w, http.StatusNotFound)
+		return
+	}
 	baseName := utils.BaseName(imagePath)
 	if r.Method == http.MethodPost {
 		err := h.imageService.UploadImage(h.ctx, profile, imageData, thumbType, baseName)
@@ -112,6 +117,10 @@ func (h *ImageAPI) HandleOriginals(w http.ResponseWriter, r *http.Request) {
 	profile := h.storageConfig.GetProfile(thumbType)
 	if profile == nil {
 		response.JSON(fmt.Sprintf("Profile '%s' not found", thumbType)).WriteError(w, http.StatusNotFound)
+		return
+	}
+	if profile.Kind == "file" {
+		response.JSON("Not found").WriteError(w, http.StatusNotFound)
 		return
 	}
 	if r.Method == http.MethodGet {

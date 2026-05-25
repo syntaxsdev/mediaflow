@@ -54,8 +54,9 @@ profiles:
 
 | Field | Notes |
 |---|---|
-| `kind` | `image` or `video`. |
+| `kind` | `image`, `video`, or `file` (an opaque file — stored as-is, no image processing or video probe). |
 | `delivery` | `""` / `"r2"` (default — presigned R2 PUT) or `"stream"` (Cloudflare Stream Direct Creator Upload). Stream requires `STREAM_ACCOUNT_ID` + `STREAM_API_TOKEN`. |
+| `bucket` | Logical bucket name resolved from `S3_BUCKET_<NAME>` (see [Multiple buckets](#multiple-buckets)). Omit to use the default `S3_BUCKET`. |
 | `allowed_mimes` | Whitelist of MIME types accepted at presign. |
 | `size_max_bytes` | Hard cap on upload size, enforced at presign. |
 | `multipart_threshold_mb` | Files above this trigger multipart (R2 only). |
@@ -106,11 +107,63 @@ All optional. Unset fields are skipped during probe; only set fields are enforce
 - `{shard?}` placeholders are stripped.
 - `shard` field in requests is ignored.
 
+## Multiple buckets
+
+By default every profile reads and writes the bucket in `S3_BUCKET`. A profile can target a different bucket with the `bucket` field:
+
+```yaml
+profiles:
+  download:
+    kind: "file"
+    bucket: "deliverables"          # logical name → S3_BUCKET_DELIVERABLES
+    storage_path: "downloads/{key_base}"
+    allowed_mimes: ["application/pdf", "application/zip"]
+    size_max_bytes: 524288000
+    token_ttl_seconds: 900
+```
+
+`bucket` is a **logical name**, not a real bucket. It resolves to the environment variable `S3_BUCKET_<NAME>`, uppercased:
+
+```bash
+S3_BUCKET=media-public                  # default — used by profiles without `bucket:`
+S3_BUCKET_DELIVERABLES=media-private     # backs the `deliverables` logical name
+```
+
+All buckets share the same credentials, endpoint, and region — only the bucket name differs.
+
+### Adding a bucket
+
+No code changes — three steps:
+
+1. Create the bucket in your object store, with whatever access policy that data needs.
+2. Set `S3_BUCKET_<NAME>=<real-bucket-name>` in the environment.
+3. Add `bucket: <name>` to the profile(s) that should use it. `<name>` matches the env-var suffix (case-insensitive): `bucket: deliverables` ⇔ `S3_BUCKET_DELIVERABLES`.
+
+Restart the service to pick up the new variable.
+
+### Validation
+
+If a profile names a bucket with no matching env var, the service **refuses to start**:
+
+```
+profile 'download' references unknown bucket 'deliverables'; set S3_BUCKET_DELIVERABLES
+```
+
+This is intentional — a profile can never silently fall back to the default bucket because an env var was missing.
+
+### Why
+
+The typical reason: the default bucket sits behind a public CDN domain, so objects are fetchable by key. Anything private — paid downloads, generated documents — belongs in a separate bucket with **no** public domain, reached only through presigned URLs. The logical `bucket:` keeps that boundary in the profile config while real bucket names stay in deploy-specific env vars.
+
 ## Environment variables
 
 ```bash
 # Required
-S3_BUCKET=your-bucket-name
+S3_BUCKET=your-bucket-name             # default bucket for profiles without `bucket:`
+
+# Extra buckets (optional) — one per logical name a profile references via `bucket:`.
+# S3_BUCKET_<NAME> ⇔ bucket: <name>. See "Multiple buckets" above.
+S3_BUCKET_DELIVERABLES=your-private-bucket
 
 # AWS / R2 credentials — pick one
 AWS_ACCESS_KEY_ID=your-access-key
